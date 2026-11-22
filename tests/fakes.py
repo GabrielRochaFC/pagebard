@@ -56,11 +56,13 @@ class FakeSynth:
         self.audio = audio
         self.error = error
         self.spoken = []
+        self.scales = []
 
     def synthesize(self, text, length_scale=1.0):
         if self.error is not None:
             raise self.error
         self.spoken.append(text)
+        self.scales.append(length_scale)
         return self.audio
 
 
