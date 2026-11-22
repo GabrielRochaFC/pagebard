@@ -1,5 +1,6 @@
 """Piper voices: which ones are installed, which exist, how to get one."""
 
+import http.client
 import json
 import os
 import re
@@ -184,7 +185,7 @@ def fetch_catalog(
         voices = parse_catalog(json.loads(raw))
         if not voices:
             raise ValueError("catalog has no voices")
-    except (OSError, ValueError) as exc:
+    except (OSError, ValueError, http.client.HTTPException) as exc:
         try:
             return parse_catalog(json.loads(cache_file.read_bytes()))
         except (OSError, ValueError):

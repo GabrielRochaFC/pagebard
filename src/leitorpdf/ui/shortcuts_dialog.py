@@ -40,7 +40,7 @@ class ShortcutsDialog(QDialog):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setWindowTitle(f"Atalhos de teclado — {APP_NAME}")
-        self.resize(620, 560)
+        self.resize(720, 620)
         self._table = QTableWidget(len(SHORTCUTS), 2)
         self._table.setHorizontalHeaderLabels(["Tecla ou gesto", "O que faz"])
         self._table.setAccessibleName("Atalhos de teclado")
@@ -53,6 +53,8 @@ class ShortcutsDialog(QDialog):
         for row, (key, what) in enumerate(SHORTCUTS):
             self._table.setItem(row, 0, QTableWidgetItem(key))
             self._table.setItem(row, 1, QTableWidgetItem(what))
+        self._table.setWordWrap(True)  # long explanations wrap instead of being cut
+        self._table.resizeRowsToContents()
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         buttons.rejected.connect(self.reject)
         buttons.accepted.connect(self.accept)
@@ -68,4 +70,6 @@ class ShortcutsDialog(QDialog):
 
 
 def show_shortcuts(parent: QWidget | None) -> None:
-    ShortcutsDialog(parent).exec()
+    dialog = ShortcutsDialog(parent)
+    dialog.exec()
+    dialog.deleteLater()

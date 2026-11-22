@@ -71,7 +71,7 @@ class VoiceManagerDialog(QDialog):
         self._catalog: list[CatalogVoice] = []
 
         self.setWindowTitle(f"Vozes — {APP_NAME}")
-        self.resize(640, 440)
+        self.resize(720, 460)
 
         language_title = QLabel("Idioma:")
         self.language_combo = QComboBox()
@@ -86,7 +86,9 @@ class VoiceManagerDialog(QDialog):
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table.verticalHeader().setVisible(False)
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        header = self.table.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.table.itemSelectionChanged.connect(self._update_buttons)
 
         self.status_label = QLabel(_LOADING)
@@ -224,6 +226,8 @@ class VoiceManagerDialog(QDialog):
         item = self._selected_item()
         if item is None:
             return
+        # Read now: the table may be rebuilt while the question is open.
+        key = item.data(Qt.ItemDataRole.UserRole)
         label = item.data(Qt.ItemDataRole.UserRole + 2)
         yes = QMessageBox.StandardButton.Yes
         answer = QMessageBox.question(
@@ -231,7 +235,7 @@ class VoiceManagerDialog(QDialog):
         )
         if answer != yes:
             return
-        remove_voice(item.data(Qt.ItemDataRole.UserRole), self._voices_dir)
+        remove_voice(key, self._voices_dir)
         self.changed = True
         self._fill_table()
 

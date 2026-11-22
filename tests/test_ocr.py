@@ -203,3 +203,13 @@ def test_recognition_does_not_stall_this_process(tessdata, make_scanned_pdf):
         last = now
     assert len(result["pages"]) == 2
     assert longest_gap < 0.05
+
+
+def test_ocr_resolution_is_capped_for_oversized_pages():
+    from leitorpdf.core.render_worker import ocr_dpi
+
+    assert ocr_dpi(595, 842) == 300  # A4
+    assert ocr_dpi(842, 1191) == 241  # A3: 4000 px on the long side
+    assert ocr_dpi(2480, 3508) == 82  # a scan saved as if it were 72 dpi
+    assert ocr_dpi(20000, 20000) == 72  # never below screen resolution
+    assert ocr_dpi(100, 100) == 300

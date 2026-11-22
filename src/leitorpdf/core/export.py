@@ -19,6 +19,13 @@ MSG_EXPORT = (
 )
 
 
+# Temporary files are created private (0600); the finished MP3 should get the
+# permissions any new file would. Read once: os.umask() can only be read by
+# setting it, which is not safe to do from several threads.
+_UMASK = os.umask(0)
+os.umask(_UMASK)
+
+
 class ExportError(LeitorError):
     pass
 
@@ -82,6 +89,7 @@ def export_mp3(
         encoder.stdin.close()
         if encoder.wait() != 0 or not wrote_audio:
             raise ExportError(MSG_EXPORT)
+        os.chmod(part, 0o666 & ~_UMASK)
         os.replace(part, dest)
     except OSError as exc:  # the encoder died, or the disk is full
         _abandon(encoder, part)

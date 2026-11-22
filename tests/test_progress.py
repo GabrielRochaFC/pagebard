@@ -130,3 +130,33 @@ def test_worker_thread_is_handed_nothing_that_qt_watches(qapp):
 
     run_with_progress(None, "…", work)
     assert seen == {"watchers": 0}
+
+
+def test_no_dialog_lingers_after_cancel_while_work_keeps_reporting(qapp):
+    # A progress report handled after Cancel used to show the dialog again,
+    # modal and frozen.
+    from PySide6.QtCore import QEvent
+    from PySide6.QtWidgets import QProgressDialog, QWidget
+
+    parent = QWidget()
+    stop = threading.Event()
+
+    def chatty(report, cancel):
+        count = 0
+        while not stop.is_set():
+            count += 1
+            report(count, 1000)
+            time.sleep(0.001)
+
+    for _ in range(5):
+        QTimer.singleShot(40, lambda: QApplication.activeModalWidget().cancel())
+        assert run_with_progress(parent, "…", chatty) == ("cancelled", None)
+        deadline = time.monotonic() + 0.15
+        while time.monotonic() < deadline:
+            qapp.processEvents()
+        assert QApplication.activeModalWidget() is None
+        assert not [d for d in parent.findChildren(QProgressDialog) if d.isVisible()]
+    stop.set()
+    qapp.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+    assert parent.findChildren(QProgressDialog) == []  # nothing piles up
+    parent.deleteLater()

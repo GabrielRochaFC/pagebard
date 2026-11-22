@@ -14,7 +14,12 @@ from leitorpdf.core.voices import DEFAULT_VOICE_KEY, Voice
 from leitorpdf.playback.player import Player, PlayerState
 from leitorpdf.ui import main_window
 from leitorpdf.ui.main_window import MainWindow
-from leitorpdf.ui.messages import MSG_NEED_VOICE, MSG_NO_TEXT
+from leitorpdf.ui.messages import (
+    MSG_NEED_VOICE,
+    MSG_NO_TEXT,
+    MSG_OCR_NOTHING,
+    MSG_OFFER_OCR,
+)
 
 PLAY = "▶ Reproduzir"
 PAUSE = "⏸ Pausar"
@@ -1287,10 +1292,8 @@ def test_offers_ocr_for_a_scanned_pdf(make_window, qapp, make_scanned_pdf, quest
     window = make_window(recognizer=recognizer, tessdata_dir=ocr_data)
     open_scan(qapp, window, make_scanned_pdf(["Página um.", "Página dois."]))
     wait_until(qapp, lambda: questions["texts"])
-    assert questions["texts"] == [
-        "Este PDF não tem texto (parece escaneado). Reconhecer o texto agora? "
-        "Pode levar alguns minutos."
-    ]
+    assert questions["texts"] == [MSG_OFFER_OCR]
+    assert MSG_OFFER_OCR.startswith("Este PDF não tem texto (parece escaneado).")
     assert notes == []  # the offer replaces the "no text" notice
     assert recognizer.calls == []  # declined
     assert not window.play_button.isEnabled()
@@ -1373,9 +1376,15 @@ def test_nothing_recognized_says_so(make_window, qapp, make_scanned_pdf, questio
     window = make_window(recognizer=FakeRecognizer(words=[]), tessdata_dir=ocr_data)
     open_scan(qapp, window, make_scanned_pdf(["Página um."]))
     wait_until(qapp, lambda: notes)
-    assert notes == [MSG_NO_TEXT]
+    assert notes == [MSG_OCR_NOTHING]
     assert not window.play_button.isEnabled()
     assert window.ocr_action.isEnabled()
+
+
+def test_messages_no_longer_say_ocr_is_missing():
+    assert "ainda não" not in MSG_NO_TEXT
+    assert MSG_NO_TEXT == "Este PDF não tem texto para ler."
+    assert MSG_OCR_NOTHING == "O reconhecimento não encontrou texto neste PDF."
 
 
 def test_ocr_action_runs_recognition_later(make_window, qapp, make_scanned_pdf, questions, ocr_data):
@@ -1413,26 +1422,62 @@ def test_ocr_language_follows_the_voice(
     assert recognizer.calls[0]["language"] == "eng"
 
 
-def test_mixed_document_keeps_its_text_and_gains_the_scanned_pages(
+def test_document_with_text_is_not_interrupted_by_an_ocr_question(
     make_window, qapp, make_scanned_pdf, questions, ocr_data, tmp_path
 ):
+    # A book with a picture cover is not a scanned document: no question on
+    # opening; the menu item and a note in the status bar are enough.
     import pymupdf
 
-    mixed = pymupdf.open(make_scanned_pdf(["Página escaneada."]))
+    mixed = pymupdf.open(make_scanned_pdf(["Capa escaneada."]))
     mixed.new_page().insert_text((72, 72), "Página com texto de verdade.")
     path = tmp_path / "misto.pdf"
     mixed.save(path)
     recognizer = FakeRecognizer()
     window = make_window(recognizer=recognizer, tessdata_dir=ocr_data)
-    window.open_path(path)
-    wait_until(qapp, lambda: recognizer.calls)
-    assert questions["texts"] == [
-        "1 de 2 páginas deste PDF não têm texto (parecem escaneadas). Reconhecer o "
-        "texto delas agora? Pode levar alguns minutos."
-    ]
+    open_and_wait(qapp, window, path)
+    assert questions["texts"] == []
+    assert recognizer.calls == []
+    assert window.ocr_action.isEnabled()
+    assert status(window) == (
+        "misto.pdf — 2 páginas · 1 página sem texto: use Arquivo → Reconhecer texto (OCR)"
+    )
+
+    window.ocr_action.trigger()
     assert recognizer.calls[0]["pages"] == [0]
-    wait_until(qapp, lambda: "Olá" in window.reading.text)
     assert window.reading.text == "Olá mundo.\n\nPágina com texto de verdade."
+    assert not window.ocr_action.isEnabled()
+
+
+def test_ocr_result_is_dropped_if_another_document_took_over(
+    make_window, qapp, make_scanned_pdf, make_pdf, questions, ocr_data
+):
+    import threading
+
+    from leitorpdf.core.pdf import load_pdf
+    from leitorpdf.core.reading import build_reading
+
+    questions["answer"] = QMessageBox.StandardButton.No
+    release = threading.Event()
+
+    class SlowRecognizer(FakeRecognizer):
+        def __call__(self, *args, **kwargs):
+            release.wait(3.0)
+            return super().__call__(*args, **kwargs)
+
+    window = make_window(recognizer=SlowRecognizer(), tessdata_dir=ocr_data)
+    open_scan(qapp, window, make_scanned_pdf(["Página um."]))
+    wait_until(qapp, lambda: questions["texts"])
+    other = load_pdf(make_pdf(["Outro documento."], name="outro.pdf"))
+
+    def another_document_arrives():
+        window._show_document(other, build_reading(other), fresh=True)
+        release.set()
+
+    QTimer.singleShot(150, another_document_arrives)
+    window.ocr_action.trigger()
+    assert window.reading.text == "Outro documento."
+    assert status(window).startswith("outro.pdf")
 
 
 def test_blank_pdf_still_gets_the_no_text_notice(make_window, qapp, make_pdf, questions, notes):
@@ -1641,3 +1686,70 @@ def test_without_a_settings_object_nothing_is_remembered(make_window):
     first.speed_slider.setValue(18)
     first.close()
     assert make_window().speed_slider.value() == 10
+
+
+# ---- review of the last plan ------------------------------------------------------------
+
+
+def test_reading_keys_work_while_a_page_field_has_focus(shown, qapp, player, out, synth):
+    out.free = 4
+    synth.audio = LONG_AUDIO
+    spin = shown.first_page_spin
+    spin.setFocus()
+    QTest.keyClick(spin, Qt.Key.Key_Space)
+    wait_until(qapp, lambda: player.state is PlayerState.PLAYING)
+    assert spin.text() == "1"  # the space did not land in the field
+    QTest.keyClick(spin, Qt.Key.Key_Plus)
+    assert shown.speed_slider.value() == 11
+    QTest.keyClick(spin, Qt.Key.Key_Minus)
+    assert shown.speed_slider.value() == 10
+    QTest.keyClick(spin, Qt.Key.Key_Space)
+    assert player.state is PlayerState.PAUSED
+    last = shown.last_page_spin  # digits still go to the field
+    last.setFocus()
+    last.selectAll()
+    QTest.keyClicks(last, "1")
+    assert last.text() == "1"
+
+
+def test_odd_geometry_preference_does_not_stop_the_window(make_window, prefs):
+    for odd in ([1, 2], "@Size(3 4)", 12, b"lixo"):
+        prefs.setValue("geometry", odd)
+        window = make_window(settings=prefs)
+        assert window.speed_slider.value() == 10
+        window.close()
+
+
+def test_window_cannot_be_made_too_narrow_for_big_text(window):
+    normal = window.minimumWidth()
+    window.set_text_scale(1.5)
+    assert window.minimumWidth() >= normal * 1.4
+    window.set_text_scale(1.0)
+    assert window.minimumWidth() == normal
+
+
+def test_export_asks_before_replacing_a_file_the_dialog_did_not_show(
+    make_window, qapp, make_pdf, exporter, save_as, tmp_path, questions
+):
+    (tmp_path / "saida.mp3").write_bytes(b"gravado antes")  # dialog answered "saida"
+    window = make_window(exporter=exporter)
+    open_and_wait(qapp, window, make_pdf(["Um."]))
+    questions["answer"] = QMessageBox.StandardButton.No
+    window.export_button.click()
+    assert questions["texts"] == ["O arquivo saida.mp3 já existe. Substituir?"]
+    assert exporter.calls == []
+    questions["answer"] = QMessageBox.StandardButton.Yes
+    window.export_button.click()
+    assert len(exporter.calls) == 1
+
+
+def test_export_does_not_ask_again_when_the_dialog_already_did(
+    make_window, qapp, make_pdf, exporter, save_as, tmp_path, questions
+):
+    save_as["answer"] = str(tmp_path / "saida.mp3")  # typed with the extension:
+    (tmp_path / "saida.mp3").write_bytes(b"gravado antes")  # the dialog confirmed it
+    window = make_window(exporter=exporter)
+    open_and_wait(qapp, window, make_pdf(["Um."]))
+    window.export_button.click()
+    assert questions["texts"] == []
+    assert len(exporter.calls) == 1

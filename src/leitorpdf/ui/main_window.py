@@ -4,7 +4,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import QSettings, QStandardPaths, Qt, QTimer
+from PySide6.QtCore import QByteArray, QEvent, QSettings, QStandardPaths, Qt, QTimer
 from PySide6.QtGui import (
     QAction,
     QActionGroup,
@@ -45,7 +45,8 @@ from leitorpdf.ui.messages import (
     MSG_EMPTY_RANGE,
     MSG_NEED_VOICE,
     MSG_NO_TEXT,
-    offer_ocr_text,
+    MSG_OCR_NOTHING,
+    MSG_OFFER_OCR,
     show_error,
 )
 from leitorpdf.ui.pdf_view import PdfView
@@ -60,6 +61,10 @@ _SPEED_MIN, _SPEED_MAX, _SPEED_DEFAULT = 5, 20, 10  # tenths: 0,5× to 2,0×
 _SPEED_SETTLE_MS = 250  # wait for the slider to stop before re-synthesizing
 _POINTS_PER_PIXEL_AT_100 = 96 / 72  # zoom shown as 100% means 96 dpi
 _TEXT_SCALES = [("Normal", 1.0), ("Grande", 1.25), ("Muito grande", 1.5)]
+_MIN_SIZE = (760, 520)  # at the normal text size; grows with the text
+_VOICE_COMBO_WIDTH = 240
+# Keys that drive the reading even while a page-number field has the focus.
+_READING_KEYS = (Qt.Key.Key_Space, Qt.Key.Key_Plus, Qt.Key.Key_Minus, Qt.Key.Key_Equal)
 _ABOUT = (
     "<b>LeitorPDF {version}</b><br>"
     "Lê PDFs em voz alta, sem internet.<br><br>"
@@ -199,7 +204,7 @@ class MainWindow(QMainWindow):
     def _build_ui(self) -> None:
         self.setWindowTitle(APP_NAME)
         self.resize(1100, 800)
-        self.setMinimumSize(760, 520)
+        self.setMinimumSize(*_MIN_SIZE)
         self.setStyleSheet(_STYLE)
 
         self.open_button = QPushButton("Abrir PDF…")
@@ -225,7 +230,7 @@ class MainWindow(QMainWindow):
 
         voice_label = QLabel("Voz:")
         self.voice_combo = QComboBox()
-        self.voice_combo.setMinimumWidth(240)
+        self.voice_combo.setMinimumWidth(_VOICE_COMBO_WIDTH)
         self.voice_combo.setAccessibleName("Voz")
         self.voice_combo.setToolTip("Voz usada na leitura")
         self.voice_combo.currentIndexChanged.connect(self._on_voice_changed)
@@ -282,6 +287,7 @@ class MainWindow(QMainWindow):
             # Apply a typed number when it is complete (Enter or leaving the
             # field), not digit by digit: "25" must not pass through "2".
             spin.setKeyboardTracking(False)
+            spin.installEventFilter(self)  # see eventFilter
         self.first_page_spin.valueChanged.connect(self._on_first_page_changed)
         self.last_page_spin.valueChanged.connect(self._on_last_page_changed)
         pages_title.setBuddy(self.first_page_spin)
@@ -422,6 +428,9 @@ class MainWindow(QMainWindow):
         # Widgets under a style sheet ignore inherited fonts, so the size goes
         # into the sheet; it also reaches the dialogs opened from this window.
         self.setStyleSheet(f"{_STYLE}\n* {{ font-size: {font.pointSizeF():g}pt; }}")
+        # Bigger text needs more room: do not let the header be squeezed.
+        self.setMinimumSize(round(_MIN_SIZE[0] * scale), round(_MIN_SIZE[1] * scale))
+        self.voice_combo.setMinimumWidth(round(_VOICE_COMBO_WIDTH * scale))
         for action, (_, value) in zip(self.text_scale_actions, _TEXT_SCALES):
             action.setChecked(value == scale)
         self._remember("text_scale", scale)
@@ -446,7 +455,7 @@ class MainWindow(QMainWindow):
         if folder and Path(folder).is_dir():
             self._last_dir = folder
         geometry = self._recall("geometry")
-        if geometry is not None and not isinstance(geometry, str):
+        if isinstance(geometry, QByteArray):
             self.restoreGeometry(geometry)
         self._remembering = True  # from here on, changes are the user's
 
@@ -481,10 +490,12 @@ class MainWindow(QMainWindow):
         if load_id != self._load_id:
             return
         self._show_document(doc, reading, fresh=True)
+        if reading.sentences:
+            return  # readable; picture-only pages are only noted in the status bar
         if doc.scanned_pages:
-            if self._ask(offer_ocr_text(len(doc.scanned_pages), reading.page_count)):
+            if self._ask(MSG_OFFER_OCR):
                 self._run_ocr()
-        elif not reading.sentences:
+        else:
             self._notify(MSG_NO_TEXT)
 
     def _show_document(self, doc: PdfText, reading: Reading, fresh: bool) -> None:
@@ -509,7 +520,13 @@ class MainWindow(QMainWindow):
         self.ocr_action.setEnabled(bool(doc.scanned_pages))
         count = reading.page_count
         self._doc_status = f"{doc.path.name} — {count} página{'' if count == 1 else 's'}"
-        if reading.sentences:
+        scanned = len(doc.scanned_pages)
+        if reading.sentences and scanned:
+            self._doc_status += (
+                f" · {scanned} página{'' if scanned == 1 else 's'} sem texto: "
+                "use Arquivo → Reconhecer texto (OCR)"
+            )
+        elif reading.sentences:
             self._doc_status += f" · {_HINT}"
         self.statusBar().showMessage(self._doc_status)
         self._update_page_label()
@@ -552,19 +569,23 @@ class MainWindow(QMainWindow):
             def progress(done: int, total: int) -> None:
                 report(done, total, f"Reconhecendo texto… página {done} de {total}")
 
-            return recognizer(path, pages, language, tessdata, progress=progress, cancel=cancel)
+            recognized = recognizer(
+                path, pages, language, tessdata, progress=progress, cancel=cancel
+            )
+            updated = with_ocr(doc, recognized)  # big documents: keep it off the UI
+            return updated, build_reading(updated)
 
-        status, recognized = run_with_progress(
+        status, result = run_with_progress(
             self, "Reconhecendo texto…", work, self._notify, cancelled
         )
-        if status != "done":
-            return
-        updated = with_ocr(doc, recognized)
+        if status != "done" or self._doc is not doc:
+            return  # cancelled, failed, or another document took over meanwhile
+        updated, reading = result
         found = len(doc.scanned_pages) - len(updated.scanned_pages)
         if found == 0:
-            self._notify(MSG_NO_TEXT)
+            self._notify(MSG_OCR_NOTHING)
             return
-        self._show_document(updated, build_reading(updated), fresh=False)
+        self._show_document(updated, reading, fresh=False)
         self.statusBar().showMessage(
             f"Texto reconhecido em {found} página{'' if found == 1 else 's'}."
         )
@@ -667,7 +688,10 @@ class MainWindow(QMainWindow):
 
     def _open_voice_manager(self) -> None:
         before = self.voice_combo.currentData()
-        self._voice_manager(self).exec()
+        dialog = self._voice_manager(self)
+        dialog.exec()
+        if isinstance(dialog, QWidget):
+            dialog.deleteLater()
         self._reload_voices(select_key=before.key if before is not None else None)
         after = self.voice_combo.currentData()
         if before is not None and (after is None or after.key != before.key):
@@ -868,6 +892,9 @@ class MainWindow(QMainWindow):
         dest = Path(chosen)
         if dest.suffix.lower() != ".mp3":
             dest = dest.with_name(dest.name + ".mp3")
+            # The dialog checked the name as typed, not this one.
+            if dest.exists() and not self._ask(f"O arquivo {dest.name} já existe. Substituir?"):
+                return
 
         # Everything the worker thread touches is plain: no widgets, no self.
         exporter, title = self._exporter, self._doc_path.stem
@@ -929,6 +956,21 @@ class MainWindow(QMainWindow):
 
     def _on_finished(self) -> None:
         self.statusBar().showMessage("Leitura concluída.")
+
+    def eventFilter(self, watched, event) -> bool:
+        """Let Space, + and - reach the reading while a page field has focus.
+
+        A number field would otherwise claim those keys as text.
+        """
+        if (
+            event.type() == QEvent.Type.ShortcutOverride
+            and watched in (self.first_page_spin, self.last_page_spin)
+            and event.key() in _READING_KEYS
+            and not event.modifiers() & Qt.KeyboardModifier.ControlModifier
+        ):
+            event.ignore()
+            return True
+        return super().eventFilter(watched, event)
 
     def closeEvent(self, event: QCloseEvent) -> None:
         self._remember("geometry", self.saveGeometry())

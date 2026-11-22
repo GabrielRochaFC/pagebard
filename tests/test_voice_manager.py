@@ -224,3 +224,22 @@ def test_without_brazilian_voices_all_languages_are_shown(qapp, tmp_path, notes)
     assert dialog.language_combo.currentText() == "Todos os idiomas"
     assert len(rows(dialog)) == 2
     dialog.close()
+
+
+def test_remove_still_works_if_the_list_arrives_during_the_question(
+    make_dialog, voices_dir, monkeypatch
+):
+    def slow_fetch(cache_file):
+        raise VoiceDownloadError(MSG_CATALOG)  # nothing yet; it "arrives" below
+
+    dialog = make_dialog(fetch=slow_fetch)
+    select(dialog, "pt_BR-faber-medium")
+
+    def question(parent, title, text, *args, **kwargs):
+        dialog._on_catalog(list(CATALOG))  # the table is rebuilt under the question
+        return QMessageBox.StandardButton.Yes
+
+    monkeypatch.setattr(QMessageBox, "question", question)
+    dialog.remove_button.click()
+    assert installed_voices(voices_dir) == []
+    assert dialog.changed

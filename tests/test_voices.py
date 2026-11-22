@@ -370,3 +370,18 @@ def test_remove_voice(tmp_path):
     ]
     remove_voice("pt_BR-a-medium", tmp_path)  # already gone: fine
     remove_voice("pt_BR-nunca-medium", tmp_path / "nao-existe")
+
+
+def test_fetch_catalog_survives_a_connection_closed_midway(tmp_path):
+    import http.client
+    import json
+
+    class Dropped(FakeResponse):
+        def read(self, size=-1):
+            raise http.client.IncompleteRead(b"{")
+
+    cache = tmp_path / "voices.json"
+    with pytest.raises(VoiceDownloadError, match=re.escape(MSG_CATALOG)):
+        fetch_catalog(cache, opener=lambda url: Dropped([]))
+    fetch_catalog(cache, opener=catalog_opener(json.dumps(CATALOG).encode()))
+    assert len(fetch_catalog(cache, opener=lambda url: Dropped([]))) == 4

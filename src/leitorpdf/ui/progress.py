@@ -60,6 +60,8 @@ def run_with_progress(
             except queue.Empty:
                 return
             if kind == "progress":
+                if cancel.is_set():
+                    continue  # touching the dialog now would show it again
                 done, total, text = payload
                 if total > 0:
                     dialog.setMaximum(100)
@@ -89,6 +91,8 @@ def run_with_progress(
     # Closing the dialog any other way (Esc, window button) also cancels. The
     # thread is not waited for; it cleans up after itself when it notices.
     cancel.set()
+    dialog.hide()
+    dialog.deleteLater()  # or they pile up as children of the window
 
     if error is not None:
         (notify or (lambda text: show_error(parent, text)))(user_message(error))

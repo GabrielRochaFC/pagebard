@@ -12,6 +12,10 @@ Lê PDFs em voz alta no Linux, sem internet, usando as vozes do
 Na primeira leitura o programa oferece baixar uma voz em português (63 MB).
 Depois disso funciona sem internet.
 
+> É preciso que o computador tenha o **Flatpak** (já vem no Fedora, Linux Mint,
+> Pop!_OS e outros). No Ubuntu ele precisa ser instalado antes, uma única vez:
+> `sudo apt install flatpak gnome-software-plugin-flatpak`
+>
 > Se o duplo clique não abrir a loja (nem toda distribuição associa arquivos
 > `.flatpak`), instale com um único comando no terminal:
 > `flatpak install --user LeitorPDF.flatpak`

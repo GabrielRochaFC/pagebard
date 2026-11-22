@@ -118,3 +118,14 @@ def test_nothing_to_say_is_an_error(tmp_path):
     with pytest.raises(ExportError, match=re.escape(MSG_EXPORT)):
         export_mp3([], speak, RATE, tmp_path / "x.mp3")
     assert list(tmp_path.iterdir()) == []
+
+
+def test_file_gets_ordinary_permissions(tmp_path):
+    import os
+    import stat
+
+    dest = tmp_path / "x.mp3"
+    export_mp3(["a"], speak, RATE, dest)
+    umask = os.umask(0)
+    os.umask(umask)
+    assert stat.S_IMODE(dest.stat().st_mode) == 0o666 & ~umask

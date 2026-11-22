@@ -65,6 +65,20 @@ def main() -> int:
     return 0
 
 
+_OCR_MAX_SIDE_PIXELS = 4000
+_SCREEN_DPI = 72
+
+
+def ocr_dpi(width: float, height: float, wanted: int = 300) -> int:
+    """Resolution to recognize a page of that size (in points) at.
+
+    The picture is capped at 4000 pixels on its longer side: an oversized page
+    at full resolution takes gigabytes of memory and minutes of work.
+    """
+    limit = int(_OCR_MAX_SIDE_PIXELS * 72 / max(width, height, 1.0))
+    return max(_SCREEN_DPI, min(wanted, limit))
+
+
 def _recognize(page: pymupdf.Page, request: dict) -> list:
     """Words read from the page as it is displayed.
 
@@ -72,7 +86,7 @@ def _recognize(page: pymupdf.Page, request: dict) -> list:
     are often stored turned, and recognizing the stored orientation misses the
     text or returns coordinates that do not match what is on screen.
     """
-    dpi = request.get("dpi", 300)
+    dpi = ocr_dpi(page.rect.width, page.rect.height, request.get("dpi", 300))
     picture = page.get_pixmap(dpi=dpi, colorspace=pymupdf.csRGB, alpha=False)
     scratch = pymupdf.open()
     try:
