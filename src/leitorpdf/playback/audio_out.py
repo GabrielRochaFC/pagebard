@@ -1,6 +1,7 @@
 """Where synthesized audio goes: the default sound device, through Qt."""
 
 import time
+from array import array
 from typing import Protocol
 
 from PySide6.QtMultimedia import QAudioFormat, QAudioSink, QMediaDevices, QtAudio
@@ -12,7 +13,10 @@ MSG_NO_AUDIO = (
     "de ouvido e tente novamente."
 )
 
-_BYTES_PER_SAMPLE = 2  # 16-bit mono
+_BYTES_PER_SAMPLE = 2  # 16-bit
+# The device gets two channels: PipeWire wires a one-channel stream to the
+# left speaker only, so each mono sample is sent to both sides.
+_DEVICE_CHANNELS = 2
 _BUFFER_MS = 200
 # Time the sound server may still need after our own estimate says "done".
 _DRAIN_MARGIN_SECONDS = 0.15
@@ -25,8 +29,21 @@ class AudioError(LeitorError):
     pass
 
 
+def mono_to_stereo(data: bytes) -> bytes:
+    """Duplicate every 16-bit sample so left and right carry the same sound."""
+    mono = array("h")
+    mono.frombytes(data)
+    stereo = array("h", bytes(len(data) * 2))
+    stereo[0::2] = mono
+    stereo[1::2] = mono
+    return stereo.tobytes()
+
+
 class AudioOut(Protocol):
-    """A device that plays 16-bit mono PCM pushed to it in small pieces."""
+    """A device that plays 16-bit mono PCM pushed to it in small pieces.
+
+    Sizes are always in bytes of mono audio, whatever the device needs.
+    """
 
     def start(self, sample_rate: int) -> None: ...
     def bytes_free(self) -> int: ...
@@ -47,6 +64,11 @@ class QtAudioOut:
         self._ends_at = 0.0
         self._suspended_at: float | None = None
 
+    @property
+    def channel_count(self) -> int:
+        """Channels of the open device stream; 0 when closed."""
+        return self._sink.format().channelCount() if self._sink is not None else 0
+
     def start(self, sample_rate: int) -> None:
         self.stop()
         device = QMediaDevices.defaultAudioOutput()
@@ -54,10 +76,12 @@ class QtAudioOut:
             raise AudioError(MSG_NO_AUDIO)
         audio_format = QAudioFormat()
         audio_format.setSampleRate(sample_rate)
-        audio_format.setChannelCount(1)
+        audio_format.setChannelCount(_DEVICE_CHANNELS)
         audio_format.setSampleFormat(QAudioFormat.SampleFormat.Int16)
         sink = QAudioSink(device, audio_format)
-        sink.setBufferSize(sample_rate * _BYTES_PER_SAMPLE * _BUFFER_MS // 1000)
+        sink.setBufferSize(
+            sample_rate * _BYTES_PER_SAMPLE * _DEVICE_CHANNELS * _BUFFER_MS // 1000
+        )
         io = sink.start()
         if io is None or sink.error() not in _HEALTHY:
             sink.stop()
@@ -73,12 +97,14 @@ class QtAudioOut:
             return 0
         if self._sink.error() not in _HEALTHY:
             raise AudioError(MSG_NO_AUDIO)
-        return self._sink.bytesFree()
+        free = self._sink.bytesFree() // _DEVICE_CHANNELS
+        return free - free % _BYTES_PER_SAMPLE
 
     def write(self, data: bytes) -> int:
-        if self._io is None:
+        if self._io is None or not data:
             return 0
-        written = self._io.write(data)
+        written = self._io.write(mono_to_stereo(data)) // _DEVICE_CHANNELS
+        written -= written % _BYTES_PER_SAMPLE
         if written <= 0:
             return 0
         self._ends_at = (
