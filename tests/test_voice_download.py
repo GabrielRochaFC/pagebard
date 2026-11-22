@@ -71,3 +71,27 @@ def test_cancel_returns_promptly_even_if_the_download_is_stuck(qapp, tmp_path):
     assert voice is None
     assert elapsed < 0.5
     assert notes == []
+
+
+def test_stuck_download_ending_after_the_dialog_is_gone_is_harmless(qapp, tmp_path):
+    # Regression: the download thread used to hold the last reference to Qt
+    # objects of the closed dialog, and destroying them off the UI thread
+    # crashed the whole program.
+    import threading
+
+    def download_threads():
+        return [t for t in threading.enumerate() if t.name == "leitorpdf-download"]
+
+    for _ in range(15):
+        release = threading.Event()
+
+        def stuck_download(key, voices_dir, progress=None, cancel=None, release=release):
+            release.wait(2.0)
+            progress(1, 2)  # reports after nobody is listening any more
+            raise DownloadCancelled()
+
+        QTimer.singleShot(20, lambda: QApplication.activeModalWidget().cancel())
+        voice = download_default_voice(None, tmp_path, notify=[].append, download=stuck_download)
+        assert voice is None
+        release.set()
+        wait_until(qapp, lambda: not download_threads())
