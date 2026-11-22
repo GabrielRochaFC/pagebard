@@ -66,6 +66,7 @@ def player(qapp, out):
 @pytest.fixture
 def make_window(qapp, player, voices_dir, notes, synth):
     windows = []
+    original_font = qapp.font()
 
     def build(**overrides):
         options = dict(
@@ -83,6 +84,7 @@ def make_window(qapp, player, voices_dir, notes, synth):
     yield build
     for window in windows:
         window.close()
+    qapp.setFont(original_font)
     deadline = time.monotonic() + 2.0
     while threads_named("leitorpdf-render") and time.monotonic() < deadline:
         time.sleep(0.005)
@@ -132,7 +134,8 @@ def test_starts_empty(window):
 
 
 def test_open_shortcut(window):
-    assert window.open_button.shortcut() == QKeySequence("Ctrl+O")
+    assert window.open_action.shortcut() == QKeySequence("Ctrl+O")
+    assert window.open_button.shortcut().isEmpty()  # one owner per key, or neither works
 
 
 def test_default_voice_is_preselected(make_window, voices_dir):
@@ -1439,3 +1442,202 @@ def test_blank_pdf_still_gets_the_no_text_notice(make_window, qapp, make_pdf, qu
     assert notes == [MSG_NO_TEXT]
     assert questions["texts"] == []
     assert not window.ocr_action.isEnabled()
+
+
+# ---- menus, preferences, large text ---------------------------------------------------
+
+from PySide6.QtCore import QSettings  # noqa: E402
+
+
+def menu_texts(window):
+    return {
+        menu.title(): [a.text() for a in menu.actions() if not a.isSeparator()]
+        for menu in (action.menu() for action in window.menuBar().actions())
+    }
+
+
+def test_menu_bar_has_every_action(window):
+    assert menu_texts(window) == {
+        "&Arquivo": ["Abrir PDF…", "Exportar MP3…", "Reconhecer texto (OCR)…", "Sair"],
+        "&Leitura": ["Reproduzir / Pausar", "Parar", "Mais rápido", "Mais devagar", "Vozes…"],
+        "&Exibir": [
+            "Aumentar página",
+            "Diminuir página",
+            "Ajustar à largura",
+            "Texto da interface",
+        ],
+        "A&juda": ["Atalhos de teclado", "Sobre o LeitorPDF"],
+    }
+    shortcuts = {
+        action.text(): [key.toString() for key in action.shortcuts()]
+        for menu in (entry.menu() for entry in window.menuBar().actions())
+        for action in menu.actions()
+        if action.shortcuts()
+    }
+    assert shortcuts == {
+        "Abrir PDF…": ["Ctrl+O"],
+        "Exportar MP3…": ["Ctrl+E"],
+        "Sair": ["Ctrl+Q"],
+        "Reproduzir / Pausar": ["Space"],
+        "Parar": ["Esc"],
+        "Mais rápido": ["+", "="],
+        "Mais devagar": ["-"],
+        "Aumentar página": ["Ctrl++", "Ctrl+="],
+        "Diminuir página": ["Ctrl+-"],
+        "Ajustar à largura": ["Ctrl+0"],
+        "Atalhos de teclado": ["F1"],
+    }
+
+
+def test_menu_actions_follow_the_document(window, qapp, make_pdf):
+    off_without_document = [
+        window.export_action, window.ocr_action,
+        window.zoom_in_action, window.zoom_out_action, window.fit_action,
+    ]  # fmt: skip
+    assert not any(action.isEnabled() for action in off_without_document)
+    open_and_wait(qapp, window, make_pdf(["Um."]))
+    assert window.export_action.isEnabled()
+    assert window.zoom_in_action.isEnabled() and window.fit_action.isEnabled()
+    assert not window.ocr_action.isEnabled()
+
+
+def test_export_shortcut(make_window, qapp, make_pdf, exporter, save_as):
+    window = make_window(exporter=exporter)
+    show_active(qapp, window)
+    QTest.keyClick(window, Qt.Key.Key_E, CTRL)  # no document: nothing happens
+    assert save_as["calls"] == []
+    open_and_wait(qapp, window, make_pdf(["Um."]))
+    QTest.keyClick(window, Qt.Key.Key_E, CTRL)
+    assert len(exporter.calls) == 1
+
+
+def test_quit_shortcut_closes_the_window(window, qapp):
+    show_active(qapp, window)
+    QTest.keyClick(window, Qt.Key.Key_Q, CTRL)
+    assert not window.isVisible()
+
+
+def test_voices_menu_item_opens_the_manager(make_window, voices_dir):
+    manager = FakeManager(lambda: None)
+    window = make_window(voice_manager=manager)
+    window.voices_action.trigger()
+    assert manager.opened == 1
+
+
+def test_f1_shows_the_shortcuts(window, qapp, monkeypatch):
+    shown_for = []
+    monkeypatch.setattr(main_window, "show_shortcuts", shown_for.append)
+    show_active(qapp, window)
+    QTest.keyClick(window, Qt.Key.Key_F1)
+    assert shown_for == [window]
+
+
+def test_shortcuts_dialog_lists_the_keys(qapp):
+    from leitorpdf.ui.shortcuts_dialog import ShortcutsDialog
+
+    dialog = ShortcutsDialog()
+    rows = dialog.rows()
+    assert ("Espaço", "Reproduzir, pausar ou continuar a leitura") in rows
+    assert ("Ctrl+O", "Abrir um PDF") in rows
+    assert ("Clique numa palavra", "Começar a leitura daquele ponto") in rows
+    assert all(key and what for key, what in rows)
+    assert len(rows) >= 14
+    dialog.close()
+
+
+def test_about_names_the_license(window, monkeypatch):
+    seen = []
+    monkeypatch.setattr(QMessageBox, "about", lambda parent, title, text: seen.append((title, text)))
+    window.about_action.trigger()
+    [(title, text)] = seen
+    assert title == "Sobre o LeitorPDF"
+    assert "AGPL" in text and "Piper" in text and "PyMuPDF" in text
+
+
+def test_text_scale_enlarges_the_whole_interface(window, qapp):
+    assert window.text_scale == 1.0
+    base = window.play_button.font().pointSizeF()
+    window.set_text_scale(1.5)
+    assert window.text_scale == 1.5
+    for widget in (window.play_button, window.statusBar(), window.voice_combo, window.menuBar()):
+        assert abs(widget.font().pointSizeF() - base * 1.5) < 0.6
+    assert abs(qapp.font().pointSizeF() - base * 1.5) < 0.6  # dialogs get it too
+    window.set_text_scale(1.0)
+    assert abs(window.play_button.font().pointSizeF() - base) < 0.1
+
+
+def test_text_scale_menu(window):
+    actions = {action.text(): action for action in window.text_scale_actions}
+    assert list(actions) == ["Normal", "Grande", "Muito grande"]
+    assert actions["Normal"].isChecked()
+    actions["Grande"].trigger()
+    assert window.text_scale == 1.25
+    assert actions["Grande"].isChecked() and not actions["Normal"].isChecked()
+    window.set_text_scale(7)  # not one of the sizes: ignored
+    assert window.text_scale == 1.25
+
+
+@pytest.fixture
+def prefs(tmp_path):
+    return QSettings(str(tmp_path / "preferencias.ini"), QSettings.Format.IniFormat)
+
+
+def test_preferences_are_restored(make_window, qapp, make_pdf, voices_dir, prefs, monkeypatch, tmp_path):
+    add_voice(voices_dir, "pt_BR-outra-medium")
+    first = make_window(settings=prefs)
+    first.voice_combo.setCurrentIndex(1)
+    first.speed_slider.setValue(15)
+    first.set_text_scale(1.25)
+    folder = tmp_path / "meus-pdfs"
+    folder.mkdir()
+    pdf = make_pdf(["Um."])
+    moved = folder / "doc.pdf"
+    moved.write_bytes(pdf.read_bytes())
+    open_and_wait(qapp, first, moved)
+    first.close()
+
+    second = make_window(settings=prefs)
+    assert second.voice_combo.currentData().key == "pt_BR-outra-medium"
+    assert second.speed_slider.value() == 15
+    assert second.speed_label.text() == "1,5×"
+    assert second.text_scale == 1.25
+    asked = []
+    monkeypatch.setattr(
+        QFileDialog,
+        "getOpenFileName",
+        lambda parent, caption, folder, *rest, **kw: (asked.append(folder), ("", ""))[1],
+    )
+    second.open_button.click()
+    assert asked == [str(folder)]
+
+
+def test_speed_from_preferences_is_used_for_reading(make_window, qapp, make_pdf, prefs, synth):
+    prefs.setValue("speed", 20)
+    window = make_window(settings=prefs)
+    open_and_wait(qapp, window, make_pdf(["Um."]))
+    read_to_the_end(qapp, window)
+    assert synth.scales == [0.5]
+
+
+def test_bad_preferences_fall_back_to_defaults(make_window, prefs):
+    prefs.setValue("voice", "xx_YY-sumiu-medium")
+    prefs.setValue("speed", "rápido")
+    prefs.setValue("text_scale", "99")
+    prefs.setValue("last_dir", "/pasta/que/nao/existe")
+    prefs.setValue("geometry", "lixo")
+    window = make_window(settings=prefs)
+    assert window.voice_combo.currentText() == "Fake · Português (Brasil) · média"
+    assert window.speed_slider.value() == 10
+    assert window.text_scale == 1.0
+
+
+def test_out_of_range_speed_preference_is_ignored(make_window, prefs):
+    prefs.setValue("speed", 500)
+    assert make_window(settings=prefs).speed_slider.value() == 10
+
+
+def test_without_a_settings_object_nothing_is_remembered(make_window):
+    first = make_window()
+    first.speed_slider.setValue(18)
+    first.close()
+    assert make_window().speed_slider.value() == 10

@@ -2,7 +2,14 @@
 
 import sys
 
-from PySide6.QtCore import QCoreApplication, QLibraryInfo, QLoggingCategory, QTranslator
+from PySide6.QtCore import (
+    QCoreApplication,
+    QLibraryInfo,
+    QLoggingCategory,
+    QSettings,
+    QTranslator,
+    QUrl,
+)
 from PySide6.QtWidgets import QApplication
 
 from leitorpdf.ui.main_window import MainWindow
@@ -35,14 +42,30 @@ def quiet_qt_logging() -> None:
     )
 
 
-def main() -> int:
+def file_argument(argv: list[str]) -> str | None:
+    """The file to open, when one was given on the command line."""
+    for argument in argv[1:]:
+        if argument.startswith("-"):
+            continue
+        url = QUrl(argument)
+        if url.scheme() == "file":
+            return url.toLocalFile()
+        return argument
+    return None
+
+
+def main(argv: list[str] | None = None) -> int:
+    argv = sys.argv if argv is None else argv
     quiet_qt_logging()
-    app = QApplication(sys.argv)
+    app = QApplication(argv)
     app.setStyle("Fusion")  # same look on every desktop; follows light/dark
     app.setApplicationName(APP_NAME)
     app.setApplicationDisplayName(APP_NAME)
     app.setDesktopFileName(APP_ID)
     install_translations(app)
-    window = MainWindow()
+    window = MainWindow(settings=QSettings(APP_NAME, APP_NAME))
     window.show()
+    path = file_argument(app.arguments())  # Qt has removed its own options
+    if path is not None:
+        window.open_path(path)
     return app.exec()

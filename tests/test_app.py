@@ -20,3 +20,13 @@ def test_quiet_qt_logging_silences_known_noise(qapp):
     assert not QLoggingCategory("qt.multimedia.ffmpeg").isInfoEnabled()
     assert QLoggingCategory("qt.qpa.wayland.textinput").isCriticalEnabled()
     assert QLoggingCategory("qt.some.other.area").isWarningEnabled()
+
+
+def test_file_given_on_the_command_line():
+    from leitorpdf.app import file_argument
+
+    assert file_argument(["leitorpdf"]) is None
+    assert file_argument(["leitorpdf", "/tmp/a.pdf"]) == "/tmp/a.pdf"
+    assert file_argument(["leitorpdf", "--estilo", "x", "-v"]) == "x"
+    assert file_argument(["leitorpdf", "-platform"]) is None
+    assert file_argument(["leitorpdf", "file:///tmp/meu%20livro.pdf"]) == "/tmp/meu livro.pdf"

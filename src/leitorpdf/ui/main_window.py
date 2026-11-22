@@ -4,9 +4,10 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import QStandardPaths, Qt, QTimer
+from PySide6.QtCore import QSettings, QStandardPaths, Qt, QTimer
 from PySide6.QtGui import (
     QAction,
+    QActionGroup,
     QCloseEvent,
     QDragEnterEvent,
     QDropEvent,
@@ -15,6 +16,7 @@ from PySide6.QtGui import (
     QShortcut,
 )
 from PySide6.QtWidgets import (
+    QApplication,
     QComboBox,
     QFileDialog,
     QHBoxLayout,
@@ -48,6 +50,7 @@ from leitorpdf.ui.messages import (
 )
 from leitorpdf.ui.pdf_view import PdfView
 from leitorpdf.ui.progress import run_with_progress
+from leitorpdf.ui.shortcuts_dialog import show_shortcuts
 from leitorpdf.ui.tasks import run_async
 from leitorpdf.ui.voice_download import download_default_voice
 from leitorpdf.ui.voice_manager import VoiceManagerDialog
@@ -56,6 +59,16 @@ _HINT = "clique no texto para escolher onde começar; arraste para ler só um tr
 _SPEED_MIN, _SPEED_MAX, _SPEED_DEFAULT = 5, 20, 10  # tenths: 0,5× to 2,0×
 _SPEED_SETTLE_MS = 250  # wait for the slider to stop before re-synthesizing
 _POINTS_PER_PIXEL_AT_100 = 96 / 72  # zoom shown as 100% means 96 dpi
+_TEXT_SCALES = [("Normal", 1.0), ("Grande", 1.25), ("Muito grande", 1.5)]
+_ABOUT = (
+    "<b>LeitorPDF {version}</b><br>"
+    "Lê PDFs em voz alta, sem internet.<br><br>"
+    "Software livre, licença AGPL-3.0-or-later.<br>"
+    "Usa as vozes do Piper, o PyMuPDF (MuPDF e Tesseract) e o Qt."
+)
+# The size the interface font has before any scaling; found once per run,
+# because the scale is applied to the application font itself.
+_base_point_size: float | None = None
 _PLAY_TEXT = {
     PlayerState.LOADING: "⏸ Pausar",
     PlayerState.PLAYING: "⏸ Pausar",
@@ -118,8 +131,15 @@ class MainWindow(QMainWindow):
         tessdata_dir: Path | None = None,
         recognizer: Callable[..., dict] = ocr.recognize,
         ocr_downloader: Callable[..., None] = ocr.download_language,
+        settings: QSettings | None = None,
     ) -> None:
         super().__init__()
+        global _base_point_size
+        if _base_point_size is None:
+            _base_point_size = QApplication.font().pointSizeF()
+        self._settings = settings  # None: nothing is remembered between runs
+        self._remembering = False  # off while the window is being set up
+        self._text_scale = 1.0
         self._exporter = exporter
         self._tessdata_dir = tessdata_dir if tessdata_dir is not None else paths.tessdata_dir()
         self._recognizer = recognizer
@@ -161,7 +181,7 @@ class MainWindow(QMainWindow):
         self.pdf_view.selection_changed.connect(self._on_selection_changed)
         self.pdf_view.context_requested.connect(self._on_context_requested)
         self.pdf_view.zoom_changed.connect(self._update_zoom_controls)
-        self._reload_voices()
+        self._restore_preferences()
         self._reset_page_range()
         self._update_zoom_controls()
         self.setAcceptDrops(True)
@@ -183,7 +203,6 @@ class MainWindow(QMainWindow):
         self.setStyleSheet(_STYLE)
 
         self.open_button = QPushButton("Abrir PDF…")
-        self.open_button.setShortcut(QKeySequence("Ctrl+O"))
         self.open_button.setToolTip("Abrir um arquivo PDF (Ctrl+O)")
         self.open_button.clicked.connect(self._choose_file)
 
@@ -203,10 +222,6 @@ class MainWindow(QMainWindow):
         self.export_button.setEnabled(False)
         self.export_button.clicked.connect(self._export)
 
-        self.ocr_action = QAction("Reconhecer texto (OCR)…", self)
-        self.ocr_action.setEnabled(False)
-        self.ocr_action.triggered.connect(self._run_ocr)
-        self.addAction(self.ocr_action)
 
         voice_label = QLabel("Voz:")
         self.voice_combo = QComboBox()
@@ -317,26 +332,123 @@ class MainWindow(QMainWindow):
         self.page_label = QLabel()
         self.statusBar().addPermanentWidget(self.page_label)
 
-        # Window-wide keys. Space is not a button shortcut on purpose: a focused
-        # button would also "click" on the key release and toggle twice.
-        space = QShortcut(QKeySequence(Qt.Key.Key_Space), self)
-        space.setAutoRepeat(False)
-        space.activated.connect(self._on_space)
-        escape = QShortcut(QKeySequence(Qt.Key.Key_Escape), self)
-        escape.setAutoRepeat(False)
-        escape.activated.connect(self._on_escape)
-        for keys, step in (("+", 1), ("=", 1), ("-", -1)):
-            shortcut = QShortcut(QKeySequence(keys), self)
-            shortcut.activated.connect(lambda step=step: self._nudge_speed(step))
+        self._build_menus()
         copy = QShortcut(QKeySequence(QKeySequence.StandardKey.Copy), self)
         copy.activated.connect(self._copy_selection)
-        for keys, action in (
-            ("Ctrl++", self.pdf_view.zoom_in),
-            ("Ctrl+=", self.pdf_view.zoom_in),
-            ("Ctrl+-", self.pdf_view.zoom_out),
-            ("Ctrl+0", self._fit_width),
-        ):
-            QShortcut(QKeySequence(keys), self).activated.connect(action)
+
+    def _action(self, text: str, slot, *shortcuts: str, repeat: bool = True) -> QAction:
+        action = QAction(text, self)
+        action.triggered.connect(slot)
+        if shortcuts:
+            action.setShortcuts([QKeySequence(keys) for keys in shortcuts])
+        action.setAutoRepeat(repeat)
+        return action
+
+    def _build_menus(self) -> None:
+        """Every command is in the menu bar; each key has exactly one owner here.
+
+        Space belongs to a window action and not to the button: a focused
+        button would also "click" on the key release and toggle twice.
+        """
+        self.open_action = self._action("Abrir PDF…", self._choose_file, "Ctrl+O")
+        self.export_action = self._action("Exportar MP3…", self._export, "Ctrl+E")
+        self.ocr_action = self._action("Reconhecer texto (OCR)…", self._run_ocr)
+        self.quit_action = self._action("Sair", self.close, "Ctrl+Q")
+        self.play_action = self._action(
+            "Reproduzir / Pausar", self._on_space, "Space", repeat=False
+        )
+        self.stop_action = self._action("Parar", self._on_escape, "Esc", repeat=False)
+        self.faster_action = self._action("Mais rápido", lambda: self._nudge_speed(1), "+", "=")
+        self.slower_action = self._action("Mais devagar", lambda: self._nudge_speed(-1), "-")
+        self.voices_action = self._action("Vozes…", self._open_voice_manager)
+        self.zoom_in_action = self._action(
+            "Aumentar página", self.pdf_view.zoom_in, "Ctrl++", "Ctrl+="
+        )
+        self.zoom_out_action = self._action("Diminuir página", self.pdf_view.zoom_out, "Ctrl+-")
+        self.fit_action = self._action("Ajustar à largura", self._fit_width, "Ctrl+0")
+        self.shortcuts_action = self._action(
+            "Atalhos de teclado", lambda: show_shortcuts(self), "F1"
+        )
+        self.about_action = self._action("Sobre o LeitorPDF", self._show_about)
+        for action in (self.export_action, self.ocr_action):
+            action.setEnabled(False)
+
+        bar = self.menuBar()
+        file_menu = bar.addMenu("&Arquivo")
+        file_menu.addActions([self.open_action, self.export_action, self.ocr_action])
+        file_menu.addSeparator()
+        file_menu.addAction(self.quit_action)
+        reading_menu = bar.addMenu("&Leitura")
+        reading_menu.addActions([self.play_action, self.stop_action])
+        reading_menu.addSeparator()
+        reading_menu.addActions([self.faster_action, self.slower_action])
+        reading_menu.addSeparator()
+        reading_menu.addAction(self.voices_action)
+        view_menu = bar.addMenu("&Exibir")
+        view_menu.addActions([self.zoom_in_action, self.zoom_out_action, self.fit_action])
+        view_menu.addSeparator()
+        text_menu = view_menu.addMenu("Texto da interface")
+        group = QActionGroup(self)
+        self.text_scale_actions: list[QAction] = []
+        for label, scale in _TEXT_SCALES:
+            action = QAction(label, self, checkable=True)
+            action.setChecked(scale == self._text_scale)
+            action.triggered.connect(lambda _checked, scale=scale: self.set_text_scale(scale))
+            group.addAction(action)
+            text_menu.addAction(action)
+            self.text_scale_actions.append(action)
+        help_menu = bar.addMenu("A&juda")
+        help_menu.addActions([self.shortcuts_action, self.about_action])
+
+    def _show_about(self) -> None:
+        from leitorpdf import __version__
+
+        QMessageBox.about(self, "Sobre o LeitorPDF", _ABOUT.format(version=__version__))
+
+    # ---- preferences ---------------------------------------------------------
+
+    @property
+    def text_scale(self) -> float:
+        return self._text_scale
+
+    def set_text_scale(self, scale: float) -> None:
+        """Size of the interface text: 1.0, 1.25 or 1.5 times the usual."""
+        if scale not in [value for _, value in _TEXT_SCALES]:
+            return
+        self._text_scale = scale
+        font = QApplication.font()
+        font.setPointSizeF(_base_point_size * scale)
+        QApplication.setFont(font)  # windows of their own, like the file chooser
+        # Widgets under a style sheet ignore inherited fonts, so the size goes
+        # into the sheet; it also reaches the dialogs opened from this window.
+        self.setStyleSheet(f"{_STYLE}\n* {{ font-size: {font.pointSizeF():g}pt; }}")
+        for action, (_, value) in zip(self.text_scale_actions, _TEXT_SCALES):
+            action.setChecked(value == scale)
+        self._remember("text_scale", scale)
+
+    def _remember(self, key: str, value: Any) -> None:
+        if self._settings is not None and self._remembering:
+            self._settings.setValue(key, value)
+
+    def _recall(self, key: str) -> Any:
+        return self._settings.value(key) if self._settings is not None else None
+
+    def _restore_preferences(self) -> None:
+        """Apply what was remembered; anything odd falls back to the default."""
+        self._reload_voices(select_key=_as_text(self._recall("voice")))
+        speed = _as_number(self._recall("speed"))
+        if speed is not None and _SPEED_MIN <= speed <= _SPEED_MAX and speed == int(speed):
+            self.speed_slider.setValue(int(speed))
+        scale = _as_number(self._recall("text_scale"))
+        if scale is not None and scale != 1.0:
+            self.set_text_scale(scale)
+        folder = _as_text(self._recall("last_dir"))
+        if folder and Path(folder).is_dir():
+            self._last_dir = folder
+        geometry = self._recall("geometry")
+        if geometry is not None and not isinstance(geometry, str):
+            self.restoreGeometry(geometry)
+        self._remembering = True  # from here on, changes are the user's
 
     # ---- opening a document ------------------------------------------------
 
@@ -355,6 +467,7 @@ class MainWindow(QMainWindow):
         path = Path(path)
         self._player.stop()
         self._last_dir = str(path.parent)
+        self._remember("last_dir", self._last_dir)
         self._load_id += 1
         load_id = self._load_id
         self.statusBar().showMessage("Abrindo PDF…")
@@ -392,6 +505,7 @@ class MainWindow(QMainWindow):
         self._update_zoom_controls()
         self.play_button.setEnabled(bool(reading.sentences))
         self.export_button.setEnabled(bool(reading.sentences))
+        self.export_action.setEnabled(bool(reading.sentences))
         self.ocr_action.setEnabled(bool(doc.scanned_pages))
         count = reading.page_count
         self._doc_status = f"{doc.path.name} — {count} página{'' if count == 1 else 's'}"
@@ -513,8 +627,11 @@ class MainWindow(QMainWindow):
 
     def _update_zoom_controls(self, _zoom: float = 0.0) -> None:
         has_document = self._reading is not None
-        for button in (self.zoom_out_button, self.zoom_in_button, self.fit_button):
-            button.setEnabled(has_document)
+        for control in (
+            self.zoom_out_button, self.zoom_in_button, self.fit_button,
+            self.zoom_out_action, self.zoom_in_action, self.fit_action,
+        ):  # fmt: skip
+            control.setEnabled(has_document)
         if has_document:
             percent = round(self.pdf_view.zoom() / _POINTS_PER_PIXEL_AT_100 * 100)
             self.zoom_label.setText(f"{percent}%")
@@ -544,6 +661,9 @@ class MainWindow(QMainWindow):
 
     def _on_voice_changed(self, _index: int) -> None:
         self._player.stop()
+        voice = self.voice_combo.currentData()
+        if voice is not None:
+            self._remember("voice", voice.key)
 
     def _open_voice_manager(self) -> None:
         before = self.voice_combo.currentData()
@@ -680,6 +800,7 @@ class MainWindow(QMainWindow):
     def _on_speed_changed(self, value: int) -> None:
         self.speed_label.setText(f"{value / 10:.1f}×".replace(".", ","))
         self._length_scale = 10 / value
+        self._remember("speed", value)
         if self._speech is not None:
             self._speech.length_scale = self._length_scale
         if self._player.state is not PlayerState.STOPPED:
@@ -810,9 +931,21 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage("Leitura concluída.")
 
     def closeEvent(self, event: QCloseEvent) -> None:
+        self._remember("geometry", self.saveGeometry())
         self._player.shutdown()
         self.pdf_view.shutdown()
         super().closeEvent(event)
+
+
+def _as_text(value: Any) -> str | None:
+    return value if isinstance(value, str) and value else None
+
+
+def _as_number(value: Any) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _first_local_file(event: QDropEvent) -> str | None:
