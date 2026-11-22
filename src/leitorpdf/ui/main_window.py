@@ -5,15 +5,17 @@ from pathlib import Path
 from typing import Any
 
 from PySide6.QtCore import QStandardPaths, Qt, QTimer
-from PySide6.QtGui import QCloseEvent, QKeySequence, QShortcut
+from PySide6.QtGui import QCloseEvent, QGuiApplication, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QComboBox,
     QFileDialog,
     QHBoxLayout,
     QLabel,
     QMainWindow,
+    QMenu,
     QMessageBox,
     QPushButton,
+    QSlider,
     QVBoxLayout,
     QWidget,
 )
@@ -31,6 +33,9 @@ from leitorpdf.ui.pdf_view import PdfView
 from leitorpdf.ui.tasks import run_async
 from leitorpdf.ui.voice_download import download_default_voice
 
+_HINT = "clique no texto para escolher onde começar; arraste para ler só um trecho"
+_SPEED_MIN, _SPEED_MAX, _SPEED_DEFAULT = 5, 20, 10  # tenths: 0,5× to 2,0×
+_SPEED_SETTLE_MS = 250  # wait for the slider to stop before re-synthesizing
 _PLAY_TEXT = {
     PlayerState.LOADING: "⏸ Pausar",
     PlayerState.PLAYING: "⏸ Pausar",
@@ -98,6 +103,8 @@ class MainWindow(QMainWindow):
         self._speech_key: str | None = None
         self._reading: Reading | None = None
         self._playing: list[Sentence] = []  # what the player is reading now
+        self._start_sentence: int | None = None  # where "play" begins, if chosen
+        self._length_scale = 1.0
         self._doc_status = ""
         self._reading_status = ""
         self._load_id = 0  # lets a newer "open" supersede one still loading
@@ -111,6 +118,11 @@ class MainWindow(QMainWindow):
         self._player.finished.connect(self._on_finished)
         self._player.error.connect(self._notify)
         self.pdf_view.page_changed.connect(self._update_page_label)
+        self.pdf_view.word_clicked.connect(self._on_word_clicked)
+        self.pdf_view.word_double_clicked.connect(self._on_word_double_clicked)
+        self.pdf_view.background_clicked.connect(self._clear_start_point)
+        self.pdf_view.selection_changed.connect(self._on_selection_changed)
+        self.pdf_view.context_requested.connect(self._on_context_requested)
         self._reload_voices()
         self._show_state(self._player.state)
 
@@ -163,8 +175,30 @@ class MainWindow(QMainWindow):
         row1.addWidget(voice_label)
         row1.addWidget(self.voice_combo)
 
+        speed_title = QLabel("Velocidade:")
+        self.speed_slider = QSlider(Qt.Orientation.Horizontal)
+        self.speed_slider.setRange(_SPEED_MIN, _SPEED_MAX)
+        self.speed_slider.setValue(_SPEED_DEFAULT)
+        self.speed_slider.setPageStep(1)
+        self.speed_slider.setFixedWidth(150)
+        self.speed_slider.setAccessibleName("Velocidade")
+        self.speed_slider.setToolTip("Velocidade da leitura (teclas + e -)")
+        self.speed_slider.valueChanged.connect(self._on_speed_changed)
+        speed_title.setBuddy(self.speed_slider)
+        self.speed_label = QLabel()
+        self.speed_label.setMinimumWidth(36)
+        self._speed_timer = QTimer(self)
+        self._speed_timer.setSingleShot(True)
+        self._speed_timer.setInterval(_SPEED_SETTLE_MS)
+        self._speed_timer.timeout.connect(self._player.resynthesize_upcoming)
+
         self._row2 = QHBoxLayout()
         self._row2.setSpacing(8)
+        self._row2.addWidget(speed_title)
+        self._row2.addWidget(self.speed_slider)
+        self._row2.addWidget(self.speed_label)
+        self._row2.addStretch(1)
+        self._on_speed_changed(self.speed_slider.value())
 
         header = QWidget()
         header.setObjectName("header")
@@ -195,6 +229,11 @@ class MainWindow(QMainWindow):
         escape = QShortcut(QKeySequence(Qt.Key.Key_Escape), self)
         escape.setAutoRepeat(False)
         escape.activated.connect(self._on_escape)
+        for keys, step in (("+", 1), ("=", 1), ("-", -1)):
+            shortcut = QShortcut(QKeySequence(keys), self)
+            shortcut.activated.connect(lambda step=step: self._nudge_speed(step))
+        copy = QShortcut(QKeySequence(QKeySequence.StandardKey.Copy), self)
+        copy.activated.connect(self._copy_selection)
 
     # ---- opening a document ------------------------------------------------
 
@@ -228,10 +267,13 @@ class MainWindow(QMainWindow):
         self._player.stop()
         self._reading = reading
         self._playing = []
+        self._start_sentence = None
         self.pdf_view.set_document(doc.path, reading)
         self.play_button.setEnabled(bool(reading.sentences))
         count = reading.page_count
         self._doc_status = f"{doc.path.name} — {count} página{'' if count == 1 else 's'}"
+        if reading.sentences:
+            self._doc_status += f" · {_HINT}"
         self.statusBar().showMessage(self._doc_status)
         self._update_page_label()
         self._show_state(self._player.state)
@@ -281,6 +323,7 @@ class MainWindow(QMainWindow):
     def _speech_for(self, voice: Voice) -> _Speech:
         if self._speech is None or self._speech_key != voice.key:
             self._speech = _Speech(self._synth_factory(voice))
+            self._speech.length_scale = self._length_scale
             self._speech_key = voice.key
         return self._speech
 
@@ -302,10 +345,92 @@ class MainWindow(QMainWindow):
     def _on_escape(self) -> None:
         if self._player.state is not PlayerState.STOPPED:
             self._player.stop()
+        elif self.pdf_view.selection() is not None:
+            self.pdf_view.clear_selection()
+        else:
+            self._clear_start_point()
 
     def _reading_scope(self) -> tuple[list[Sentence], int]:
         """The sentences to read and which one to start with."""
-        return list(self._reading.sentences), 0
+        selection = self.pdf_view.selection()
+        if selection is not None:
+            return self._reading.sentences_between(*selection), 0
+        return list(self._reading.sentences), self._start_sentence or 0
+
+    # ---- choosing what to read -------------------------------------------------
+
+    def _set_start_point(self, word: int) -> bool:
+        """Make the sentence of that word the place where reading begins."""
+        if self._reading is None:
+            return False
+        index = self._reading.sentence_index_at(self._reading.words[word].start)
+        if index is None:
+            return False
+        self._start_sentence = index
+        sentence = self._reading.sentences[index]
+        self.pdf_view.set_start_marker(sentence.start, sentence.end)
+        self._show_state(self._player.state)
+        return True
+
+    def _clear_start_point(self) -> None:
+        self._start_sentence = None
+        self.pdf_view.clear_start_marker()
+        self._show_state(self._player.state)
+
+    def _on_word_clicked(self, word: int) -> None:
+        if not self._set_start_point(word):
+            return
+        state = self._player.state
+        if state is PlayerState.PAUSED:
+            self._player.stop()  # "continue" would go on from the old place
+        elif state is not PlayerState.STOPPED:
+            self._start_reading()  # jump there right away
+
+    def _on_word_double_clicked(self, word: int) -> None:
+        if self._set_start_point(word):
+            self._start_reading()
+
+    def _on_selection_changed(self, _start: int, _end: int) -> None:
+        self._show_state(self._player.state)
+
+    def _copy_selection(self) -> None:
+        text = self.pdf_view.selected_text()
+        if text:
+            QGuiApplication.clipboard().setText(text)
+
+    def build_context_menu(self, word: int) -> QMenu:
+        """Menu for a right click on that word (-1: not on a word)."""
+        menu = QMenu(self)
+        if word >= 0:
+            menu.addAction("Ler a partir daqui").triggered.connect(
+                lambda: self._read_from_word(word)
+            )
+        if self.pdf_view.selection() is not None:
+            menu.addAction("Ler seleção").triggered.connect(self._start_reading)
+            menu.addAction("Copiar").triggered.connect(self._copy_selection)
+        return menu
+
+    def _read_from_word(self, word: int) -> None:
+        self.pdf_view.clear_selection()
+        self._on_word_double_clicked(word)
+
+    def _on_context_requested(self, word: int, position) -> None:
+        menu = self.build_context_menu(word)
+        if not menu.isEmpty():
+            menu.exec(position)
+
+    # ---- speed ---------------------------------------------------------------------
+
+    def _on_speed_changed(self, value: int) -> None:
+        self.speed_label.setText(f"{value / 10:.1f}×".replace(".", ","))
+        self._length_scale = 10 / value
+        if self._speech is not None:
+            self._speech.length_scale = self._length_scale
+        if self._player.state is not PlayerState.STOPPED:
+            self._speed_timer.start()
+
+    def _nudge_speed(self, step: int) -> None:
+        self.speed_slider.setValue(self.speed_slider.value() + step)
 
     def _start_reading(self) -> None:
         if self._reading is None:
@@ -359,6 +484,10 @@ class MainWindow(QMainWindow):
         self.stop_button.setEnabled(state is not PlayerState.STOPPED)
 
     def _idle_play_text(self) -> str:
+        if self.pdf_view.selection() is not None:
+            return "▶ Ler seleção"
+        if self._start_sentence is not None:
+            return "▶ Ler daqui"
         return "▶ Reproduzir"
 
     def _on_finished(self) -> None:

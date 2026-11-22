@@ -518,3 +518,226 @@ def test_closing_the_window_stops_everything(window, qapp, make_pdf, player, out
     assert player.state is PlayerState.STOPPED
     assert threads_named("leitorpdf-synth") == []
     assert threads_named("leitorpdf-render") == []
+
+
+# ---- where to start, reading a passage, speed (words: Um dois. Três quatro. | Cinco seis.) ----
+
+NONE = Qt.KeyboardModifier.NoModifier
+READ_HERE = "▶ Ler daqui"
+READ_SELECTION = "▶ Ler seleção"
+HINT = "clique no texto para escolher onde começar; arraste para ler só um trecho"
+
+
+@pytest.fixture
+def shown(window, qapp, make_pdf):
+    """A visible window with a two-page document open."""
+    show_active(qapp, window)
+    open_and_wait(qapp, window, make_pdf(["Um dois. Três quatro.", "Cinco seis."]))
+    return window
+
+
+def word_center(window, index):
+    word = window.reading.words[index]
+    return window.pdf_view.to_view(
+        word.page, (word.rect[0] + word.rect[2]) / 2, (word.rect[1] + word.rect[3]) / 2
+    )
+
+
+def click_word(window, index):
+    QTest.mouseClick(window.pdf_view.viewport(), LEFT, NONE, word_center(window, index))
+
+
+def click_blank(window):
+    QTest.mouseClick(window.pdf_view.viewport(), LEFT, NONE, window.pdf_view.to_view(0, 300, 500))
+
+
+def drag_words(window, first, last):
+    viewport = window.pdf_view.viewport()
+    start, end = word_center(window, first), word_center(window, last)
+    QTest.mousePress(viewport, LEFT, NONE, start)
+    QTest.mouseMove(viewport, (start + end) / 2)
+    QTest.mouseMove(viewport, end)
+    QTest.mouseRelease(viewport, LEFT, NONE, end)
+
+
+def sentence_range(window, index):
+    sentence = window.reading.sentences[index]
+    return sentence.start, sentence.end
+
+
+def read_to_the_end(qapp, window):
+    window.play_button.click()
+    wait_until(qapp, lambda: status(window) == "Leitura concluída.")
+
+
+def test_status_has_the_hint_after_opening(shown):
+    assert status(shown) == f"doc.pdf — 2 páginas · {HINT}"
+
+
+def test_click_sets_the_start_point(shown, qapp, synth):
+    click_word(shown, 2)
+    assert shown.pdf_view.start_marker() == sentence_range(shown, 1)
+    assert shown.play_button.text() == READ_HERE
+    read_to_the_end(qapp, shown)
+    assert synth.spoken == ["Três quatro.", "Cinco seis."]
+    assert shown.pdf_view.start_marker() == sentence_range(shown, 1)  # kept for next time
+
+
+def test_click_while_reading_jumps_there(shown, qapp, player, out, synth):
+    start_long_playback(qapp, shown, player, out, synth)
+    assert shown.pdf_view.reading_highlight() == sentence_range(shown, 0)
+    click_word(shown, 3)
+    wait_until(qapp, lambda: shown.pdf_view.reading_highlight() == sentence_range(shown, 1))
+    assert player.state is PlayerState.PLAYING
+    assert shown.pdf_view.start_marker() == sentence_range(shown, 1)
+
+
+def test_click_while_paused_stops_and_sets_the_start_point(shown, qapp, player, out, synth):
+    start_long_playback(qapp, shown, player, out, synth)
+    shown.play_button.click()  # pause
+    click_word(shown, 2)
+    assert player.state is PlayerState.STOPPED
+    assert shown.play_button.text() == READ_HERE
+
+
+def test_double_click_starts_reading_from_there(shown, qapp, player, out, synth):
+    out.free = 4
+    synth.audio = LONG_AUDIO
+    QTest.mouseDClick(shown.pdf_view.viewport(), LEFT, NONE, word_center(shown, 2))
+    wait_until(qapp, lambda: shown.pdf_view.reading_highlight() == sentence_range(shown, 1))
+    assert synth.spoken[0] == "Três quatro."
+    assert player.state is PlayerState.PLAYING
+
+
+def test_selection_is_read_alone(shown, qapp, synth):
+    drag_words(shown, 1, 2)
+    assert shown.pdf_view.selected_text() == "dois. Três"
+    assert shown.play_button.text() == READ_SELECTION
+    read_to_the_end(qapp, shown)
+    assert synth.spoken == ["dois.", "Três"]
+    assert shown.pdf_view.selection() is not None  # still selected afterwards
+
+
+def test_selection_wins_over_the_start_point(shown, qapp, synth):
+    click_word(shown, 4)
+    drag_words(shown, 0, 1)
+    assert shown.play_button.text() == READ_SELECTION
+    read_to_the_end(qapp, shown)
+    assert synth.spoken == ["Um dois."]
+
+
+def test_highlight_follows_the_pieces_of_a_selection(shown, qapp, player, out, synth):
+    drag_words(shown, 1, 2)
+    start_long_playback(qapp, shown, player, out, synth)
+    words = shown.reading.words
+    assert shown.pdf_view.reading_highlight() == (words[1].start, words[1].end)
+
+
+def test_background_click_clears_selection_and_start_point(shown):
+    click_word(shown, 2)
+    drag_words(shown, 0, 1)
+    click_blank(shown)
+    assert shown.pdf_view.selection() is None
+    assert shown.pdf_view.start_marker() is None
+    assert shown.play_button.text() == PLAY
+
+
+def test_escape_clears_selection_then_start_point_when_stopped(shown):
+    click_word(shown, 2)
+    drag_words(shown, 0, 1)
+    QTest.keyClick(shown, Qt.Key.Key_Escape)
+    assert shown.pdf_view.selection() is None
+    assert shown.pdf_view.start_marker() == sentence_range(shown, 1)
+    assert shown.play_button.text() == READ_HERE
+    QTest.keyClick(shown, Qt.Key.Key_Escape)
+    assert shown.pdf_view.start_marker() is None
+    assert shown.play_button.text() == PLAY
+
+
+def test_new_document_forgets_start_point_and_selection(shown, qapp, make_pdf):
+    click_word(shown, 2)
+    shown.open_path(make_pdf(["Outro texto."], name="outro.pdf"))
+    wait_until(qapp, lambda: shown.reading.text == "Outro texto.")
+    assert shown.pdf_view.start_marker() is None
+    assert shown.play_button.text() == PLAY
+    read_to_the_end(qapp, shown)
+
+
+def test_copy_puts_the_selection_on_the_clipboard(shown, qapp):
+    qapp.clipboard().setText("antes")
+    drag_words(shown, 1, 2)
+    QTest.keyClick(shown, Qt.Key.Key_C, Qt.KeyboardModifier.ControlModifier)
+    assert qapp.clipboard().text() == "dois. Três"
+
+
+def test_context_menu_offers_what_applies(shown):
+    def actions(word):
+        return [action.text() for action in shown.build_context_menu(word).actions()]
+
+    assert actions(-1) == []
+    assert actions(2) == ["Ler a partir daqui"]
+    drag_words(shown, 1, 2)
+    assert actions(2) == ["Ler a partir daqui", "Ler seleção", "Copiar"]
+    assert actions(-1) == ["Ler seleção", "Copiar"]
+
+
+def test_context_menu_read_from_here(shown, qapp, synth):
+    menu = shown.build_context_menu(4)
+    menu.actions()[0].trigger()
+    wait_until(qapp, lambda: status(shown) == "Leitura concluída.")
+    assert synth.spoken == ["Cinco seis."]
+
+
+def test_context_menu_read_selection(shown, qapp, synth):
+    drag_words(shown, 2, 3)
+    menu = shown.build_context_menu(-1)
+    menu.actions()[0].trigger()
+    wait_until(qapp, lambda: status(shown) == "Leitura concluída.")
+    assert synth.spoken == ["Três quatro."]
+
+
+def test_speed_label_and_range(window):
+    assert window.speed_slider.value() == 10
+    assert window.speed_label.text() == "1,0×"
+    assert (window.speed_slider.minimum(), window.speed_slider.maximum()) == (5, 20)
+    window.speed_slider.setValue(15)
+    assert window.speed_label.text() == "1,5×"
+    window.speed_slider.setValue(5)
+    assert window.speed_label.text() == "0,5×"
+
+
+def test_speed_is_passed_to_the_synthesizer(shown, qapp, synth):
+    shown.speed_slider.setValue(20)
+    read_to_the_end(qapp, shown)
+    assert synth.scales == [0.5, 0.5, 0.5]
+
+
+def test_changing_speed_while_reading_applies_to_following_sentences(
+    shown, qapp, player, out, synth
+):
+    start_long_playback(qapp, shown, player, out, synth)
+    assert set(synth.scales) == {1.0}
+    before = len(synth.spoken)
+    shown.speed_slider.setValue(18)
+    shown.speed_slider.setValue(20)  # two quick changes: one re-synthesis
+    wait_until(qapp, lambda: 0.5 in synth.scales)
+    assert player.state is PlayerState.PLAYING
+    assert shown.pdf_view.reading_highlight() == sentence_range(shown, 0)  # not restarted
+    again = synth.spoken[before:]
+    assert again[0] == "Três quatro."  # the sentence after the one being heard
+    assert 10 / 18 not in synth.scales
+
+
+def test_speed_shortcuts(shown):
+    QTest.keyClick(shown, Qt.Key.Key_Plus)
+    assert shown.speed_slider.value() == 11
+    QTest.keyClick(shown, Qt.Key.Key_Equal)
+    assert shown.speed_slider.value() == 12
+    QTest.keyClick(shown, Qt.Key.Key_Minus)
+    assert shown.speed_slider.value() == 11
+    shown.speed_slider.setValue(20)
+    QTest.keyClick(shown, Qt.Key.Key_Plus)
+    assert shown.speed_slider.value() == 20
+    shown.speed_slider.setValue(5)
+    QTest.keyClick(shown, Qt.Key.Key_Minus)
+    assert shown.speed_slider.value() == 5
