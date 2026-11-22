@@ -5,14 +5,22 @@ from pathlib import Path
 import pytest
 
 from leitorpdf.core.voices import (
+    CATALOG_URL,
     HF_BASE,
+    MSG_CATALOG,
     MSG_DOWNLOAD,
+    CatalogVoice,
     DownloadCancelled,
     Voice,
     VoiceDownloadError,
     download_voice,
+    fetch_catalog,
     installed_voices,
+    language_label,
+    parse_catalog,
     parse_key,
+    quality_label,
+    remove_voice,
     voice_urls,
 )
 
@@ -80,12 +88,26 @@ def test_parse_key():
             parse_key(bad)
 
 
-def test_voice_label():
-    assert Voice("pt_BR-faber-medium", Path("x.onnx")).label == "Faber · pt_BR · medium"
+def test_voice_label_in_portuguese():
     assert (
-        Voice("en_US-hfc_female-medium", Path("x.onnx")).label
-        == "Hfc female · en_US · medium"
+        Voice("pt_BR-faber-medium", Path("x.onnx")).label
+        == "Faber · Português (Brasil) · média"
     )
+    assert (
+        Voice("en_US-hfc_female-x_low", Path("x.onnx")).label
+        == "Hfc female · Inglês (EUA) · muito baixa"
+    )
+    assert Voice("sw_CD-lanfrica-high", Path("x.onnx")).label == "Lanfrica · sw_CD · alta"
+
+
+def test_language_and_quality_labels():
+    assert language_label("pt_BR") == "Português (Brasil)"
+    assert language_label("pt_PT") == "Português (Portugal)"
+    assert language_label("es_ES") == "Espanhol (Espanha)"
+    assert language_label("xx_YY") == "xx_YY"
+    assert [quality_label(q) for q in ("x_low", "low", "medium", "high", "ultra")] == [
+        "muito baixa", "baixa", "média", "alta", "ultra",
+    ]  # fmt: skip
 
 
 def test_voice_urls():
@@ -241,3 +263,110 @@ def test_unexpected_exception_is_cleaned_up_and_reported(tmp_path):
     with pytest.raises(VoiceDownloadError, match=re.escape(MSG_DOWNLOAD)):
         download_voice(KEY, dest, opener=opener)
     assert list(dest.iterdir()) == []
+
+
+# ---- catalog ---------------------------------------------------------------------
+
+
+def catalog_entry(key, size=1000):
+    language, name, quality = key.split("-")
+    return {
+        "key": key,
+        "name": name,
+        "language": {"code": language},
+        "quality": quality,
+        "files": {f"x/{key}.onnx": {"size_bytes": size}, f"x/{key}.onnx.json": {"size_bytes": 24}},
+    }
+
+
+CATALOG = {
+    key: catalog_entry(key, size)
+    for key, size in [
+        ("en_US-amy-low", 60_000_000),
+        ("pt_BR-faber-medium", 63_221_984),
+        ("pt_BR-cadu-medium", 63_000_000),
+        ("de_DE-thorsten-high", 110_000_000),
+    ]
+}
+
+
+def catalog_opener(payload):
+    calls = []
+
+    def opener(url):
+        calls.append(url)
+        if isinstance(payload, Exception):
+            raise payload
+        return FakeResponse([payload], length=len(payload))
+
+    opener.calls = calls
+    return opener
+
+
+def test_parse_catalog_orders_and_sizes():
+    data = dict(CATALOG)
+    data["quebrada"] = {"key": "quebrada"}  # malformed entries are skipped
+    data["pt_BR-semarquivos-low"] = {"key": "pt_BR-semarquivos-low", "files": "?"}
+    voices = parse_catalog(data)
+    assert [v.key for v in voices] == [
+        "pt_BR-cadu-medium",
+        "pt_BR-faber-medium",
+        "de_DE-thorsten-high",
+        "en_US-amy-low",
+    ]  # pt_BR first, then by language name in Portuguese: Alemão, Inglês
+    faber = voices[1]
+    assert faber == CatalogVoice("pt_BR-faber-medium", "pt_BR", "faber", "medium", 63_222_008)
+    assert faber.label == "Faber · Português (Brasil) · média"
+
+
+def test_fetch_catalog_writes_cache(tmp_path):
+    import json
+
+    cache = tmp_path / "dados" / "voices.json"
+    opener = catalog_opener(json.dumps(CATALOG).encode())
+    voices = fetch_catalog(cache, opener=opener)
+    assert opener.calls == [CATALOG_URL]
+    assert len(voices) == 4
+    assert json.loads(cache.read_text()) == CATALOG
+    assert [p.name for p in cache.parent.iterdir()] == ["voices.json"]
+
+
+def test_fetch_catalog_falls_back_to_cache_when_offline(tmp_path):
+    import json
+
+    cache = tmp_path / "voices.json"
+    fetch_catalog(cache, opener=catalog_opener(json.dumps(CATALOG).encode()))
+    voices = fetch_catalog(cache, opener=catalog_opener(OSError("sem rede")))
+    assert len(voices) == 4
+
+
+def test_fetch_catalog_without_cache_reports_error(tmp_path):
+    with pytest.raises(VoiceDownloadError, match=re.escape(MSG_CATALOG)):
+        fetch_catalog(tmp_path / "voices.json", opener=catalog_opener(OSError("sem rede")))
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_fetch_catalog_ignores_a_garbage_response(tmp_path):
+    import json
+
+    cache = tmp_path / "voices.json"
+    with pytest.raises(VoiceDownloadError, match=re.escape(MSG_CATALOG)):
+        fetch_catalog(cache, opener=catalog_opener(b"<html>erro do servidor</html>"))
+    assert not cache.exists()
+    fetch_catalog(cache, opener=catalog_opener(json.dumps(CATALOG).encode()))
+    voices = fetch_catalog(cache, opener=catalog_opener(b"[1, 2, 3]"))  # valid JSON, wrong shape
+    assert len(voices) == 4
+    assert json.loads(cache.read_text()) == CATALOG  # the good copy was kept
+
+
+def test_remove_voice(tmp_path):
+    install(tmp_path, "pt_BR-a-medium")
+    install(tmp_path, "pt_BR-b-medium")
+    remove_voice("pt_BR-a-medium", tmp_path)
+    assert [v.key for v in installed_voices(tmp_path)] == ["pt_BR-b-medium"]
+    assert sorted(p.name for p in tmp_path.iterdir()) == [
+        "pt_BR-b-medium.onnx",
+        "pt_BR-b-medium.onnx.json",
+    ]
+    remove_voice("pt_BR-a-medium", tmp_path)  # already gone: fine
+    remove_voice("pt_BR-nunca-medium", tmp_path / "nao-existe")

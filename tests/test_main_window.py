@@ -128,7 +128,7 @@ def test_starts_empty(window):
     assert not window.stop_button.isEnabled()
     assert window.page_label.text() == ""
     assert window.voice_combo.count() == 1
-    assert window.voice_combo.itemText(0) == "Fake · pt_BR · medium"
+    assert window.voice_combo.itemText(0) == "Fake · Português (Brasil) · média"
 
 
 def test_open_shortcut(window):
@@ -140,7 +140,7 @@ def test_default_voice_is_preselected(make_window, voices_dir):
     add_voice(voices_dir, DEFAULT_VOICE_KEY)
     window = make_window()
     assert window.voice_combo.count() == 3
-    assert window.voice_combo.currentText() == "Faber · pt_BR · medium"
+    assert window.voice_combo.currentText() == "Faber · Português (Brasil) · média"
 
 
 # ---- opening documents --------------------------------------------------------
@@ -474,7 +474,7 @@ def test_no_voice_download_accepted_then_reads(
     open_and_wait(qapp, window, make_pdf(["Olá mundo."]))
     window.play_button.click()
     assert window.voice_combo.count() == 1
-    assert window.voice_combo.currentText() == "Faber · pt_BR · medium"
+    assert window.voice_combo.currentText() == "Faber · Português (Brasil) · média"
     wait_until(qapp, lambda: status(window) == "Leitura concluída.")
     assert synth.spoken == ["Olá mundo."]
 
