@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=LeitorPDF
+GenericName=Leitor de PDF em voz alta
+Comment=Lê PDFs em voz alta, sem internet
+Exec=leitorpdf %f
+Icon=io.github.leitorpdf.LeitorPDF
+Terminal=false
+Categories=Office;Viewer;
+Keywords=PDF;voz;leitura;ouvir;áudio;MP3;
+MimeType=application/pdf;
+StartupNotify=true

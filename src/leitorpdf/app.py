@@ -10,6 +10,7 @@ from PySide6.QtCore import (
     QTranslator,
     QUrl,
 )
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication
 
 from leitorpdf.ui.main_window import MainWindow
@@ -62,6 +63,7 @@ def main(argv: list[str] | None = None) -> int:
     app.setApplicationName(APP_NAME)
     app.setApplicationDisplayName(APP_NAME)
     app.setDesktopFileName(APP_ID)
+    app.setWindowIcon(QIcon.fromTheme(APP_ID))  # there once the app is installed
     install_translations(app)
     window = MainWindow(settings=QSettings(APP_NAME, APP_NAME))
     window.show()

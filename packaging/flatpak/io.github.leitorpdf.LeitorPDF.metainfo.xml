@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.leitorpdf.LeitorPDF</id>
+  <name>LeitorPDF</name>
+  <summary>Lê PDFs em voz alta, sem internet</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>AGPL-3.0-or-later</project_license>
+  <developer id="io.github.leitorpdf">
+    <name>LeitorPDF</name>
+  </developer>
+  <description>
+    <p>
+      O LeitorPDF abre um PDF, mostra as páginas como no original e lê o texto
+      em voz alta com vozes naturais do Piper. Tudo funciona no próprio
+      computador, sem internet e sem placa de vídeo.
+    </p>
+    <ul>
+      <li>A frase que está sendo lida fica destacada na página</li>
+      <li>Clique numa palavra para começar dali, ou selecione um trecho para ouvir só ele</li>
+      <li>Controle de velocidade e escolha de vozes em vários idiomas</li>
+      <li>Exportação da leitura para MP3</li>
+      <li>Reconhecimento de texto (OCR) para PDFs escaneados</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">io.github.leitorpdf.LeitorPDF.desktop</launchable>
+  <content_rating type="oars-1.1"/>
+  <provides>
+    <binary>leitorpdf</binary>
+    <mediatype>application/pdf</mediatype>
+  </provides>
+  <releases>
+    <release version="0.1.0" date="2026-11-22">
+      <description>
+        <p>Primeira versão.</p>
+      </description>
+    </release>
+  </releases>
+</component>

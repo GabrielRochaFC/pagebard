@@ -1,0 +1,64 @@
+{
+    "id": "io.github.leitorpdf.LeitorPDF",
+    "runtime": "org.freedesktop.Platform",
+    "runtime-version": "26.08",
+    "sdk": "org.freedesktop.Sdk",
+    "command": "leitorpdf",
+    "finish-args": [
+        "--socket=wayland",
+        "--socket=fallback-x11",
+        "--share=ipc",
+        "--device=dri",
+        "--socket=pulseaudio",
+        "--share=network",
+        "--filesystem=home"
+    ],
+    "modules": [
+        {
+            "name": "python-deps",
+            "buildsystem": "simple",
+            "build-options": {
+                "build-args": ["--share=network"]
+            },
+            "build-commands": [
+                "pip3 install --prefix=/app --no-cache-dir -r requirements.txt",
+                "pip3 install --prefix=/app --no-cache-dir --no-deps -r requirements-nodeps.txt"
+            ],
+            "sources": [
+                {"type": "file", "path": "requirements.txt"},
+                {"type": "file", "path": "requirements-nodeps.txt"}
+            ]
+        },
+        {
+            "name": "leitorpdf",
+            "buildsystem": "simple",
+            "build-options": {
+                "build-args": ["--share=network"]
+            },
+            "build-commands": [
+                "pip3 install --prefix=/app --no-cache-dir --no-deps .",
+                "install -Dm644 packaging/flatpak/io.github.leitorpdf.LeitorPDF.desktop /app/share/applications/io.github.leitorpdf.LeitorPDF.desktop",
+                "install -Dm644 packaging/flatpak/io.github.leitorpdf.LeitorPDF.metainfo.xml /app/share/metainfo/io.github.leitorpdf.LeitorPDF.metainfo.xml",
+                "install -Dm644 packaging/flatpak/io.github.leitorpdf.LeitorPDF.svg /app/share/icons/hicolor/scalable/apps/io.github.leitorpdf.LeitorPDF.svg"
+            ],
+            "sources": [
+                {
+                    "type": "dir",
+                    "path": "../..",
+                    "skip": [
+                        ".venv",
+                        ".git",
+                        ".superpowers",
+                        ".pytest_cache",
+                        "tests",
+                        "docs",
+                        "LeitorPDF.flatpak",
+                        "packaging/flatpak/build-dir",
+                        "packaging/flatpak/repo",
+                        "packaging/flatpak/.flatpak-builder"
+                    ]
+                }
+            ]
+        }
+    ]
+}

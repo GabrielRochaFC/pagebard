@@ -7,3 +7,5 @@ dist/
 .flatpak-builder/
 *.flatpak
 .superpowers/
+packaging/flatpak/build-dir/
+packaging/flatpak/repo/
