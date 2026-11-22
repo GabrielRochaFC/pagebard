@@ -72,7 +72,10 @@ def download_default_voice(
     timer = QTimer(dialog)
     timer.timeout.connect(poll)
     timer.start(_POLL_MS)
-    dialog.canceled.connect(cancel.set)
+    # A lambda, not `cancel.set`: connecting a bound method makes PySide watch
+    # `cancel` through a weak reference, and that watcher would run on the
+    # download thread if the thread were the last one holding the event.
+    dialog.canceled.connect(lambda: cancel.set())
     dialog.exec()
     timer.stop()
     # Closing the dialog any other way (Esc, window button) also cancels.

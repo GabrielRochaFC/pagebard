@@ -95,3 +95,21 @@ def test_stuck_download_ending_after_the_dialog_is_gone_is_harmless(qapp, tmp_pa
         assert voice is None
         release.set()
         wait_until(qapp, lambda: not download_threads())
+
+
+def test_download_thread_is_handed_nothing_that_qt_watches(qapp, tmp_path):
+    # Qt signal connections to a bound method watch its object through a weak
+    # reference; if the download thread drops the last reference, that watcher
+    # runs off the UI thread and crashes. So the cancel event must be unwatched.
+    import time
+    import weakref
+
+    seen = {}
+
+    def fake_download(key, voices_dir, progress=None, cancel=None):
+        time.sleep(0.1)  # let the dialog finish wiring itself up
+        seen["watchers"] = weakref.getweakrefcount(cancel)
+        return Voice(key, voices_dir / f"{key}.onnx")
+
+    download_default_voice(None, tmp_path, notify=[].append, download=fake_download)
+    assert seen == {"watchers": 0}
