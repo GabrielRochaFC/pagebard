@@ -2,7 +2,8 @@
 
 import os
 import threading
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import pymupdf
@@ -59,6 +60,8 @@ class PdfText:
     pages: tuple[str, ...]  # normalized text of each page, "" when it has none
     words: tuple[tuple[Word, ...], ...]  # per page, in reading order
     page_sizes: tuple[tuple[float, float], ...]  # (width, height) in points
+    # Pages (0-based) that are only a picture: no text, at least one image.
+    scanned_pages: tuple[int, ...] = ()
 
     @property
     def has_text(self) -> bool:
@@ -81,7 +84,7 @@ def load_pdf(path: str | Path) -> PdfText:
             if doc.needs_pass:
                 raise PdfError(MSG_PASSWORD)
             page_count = doc.page_count
-        raw_pages, sizes = [], []
+        raw_pages, sizes, scanned = [], [], []
         try:
             for index in range(page_count):
                 with MUPDF_LOCK:  # per page, so other PyMuPDF work can interleave
@@ -89,8 +92,11 @@ def load_pdf(path: str | Path) -> PdfText:
                     entries = page.get_text("words", sort=False, flags=_TEXT_FLAGS)
                     rotation = page.rotation_matrix if page.rotation else None
                     sizes.append((float(page.rect.width), float(page.rect.height)))
+                    has_picture = not entries and bool(page.get_images())
                 raw = [entry for entry in entries if entry[4].replace(_SOFT_HYPHEN, "")]
                 raw_pages.append((raw, rotation))
+                if has_picture:
+                    scanned.append(index)
         except Exception as exc:
             raise PdfError(MSG_INVALID) from exc
     finally:
@@ -108,7 +114,29 @@ def load_pdf(path: str | Path) -> PdfText:
         texts.append(text)
         words.append(page_words)
     return PdfText(
-        path=path, pages=tuple(texts), words=tuple(words), page_sizes=tuple(sizes)
+        path=path,
+        pages=tuple(texts),
+        words=tuple(words),
+        page_sizes=tuple(sizes),
+        scanned_pages=tuple(scanned),
+    )
+
+
+def with_ocr(doc: PdfText, recognized: Mapping[int, list]) -> PdfText:
+    """A copy of doc where the given pages get the words OCR found on them.
+
+    `recognized` maps a page (0-based) to raw words as PyMuPDF lists them,
+    already in the coordinates of the displayed page.
+    """
+    pages, words = list(doc.pages), list(doc.words)
+    for page, entries in recognized.items():
+        raw = [tuple(entry) for entry in entries if str(entry[4]).strip()]
+        pages[page], words[page] = _page_content(raw, None, False)
+    return replace(
+        doc,
+        pages=tuple(pages),
+        words=tuple(words),
+        scanned_pages=tuple(page for page in doc.scanned_pages if not pages[page]),
     )
 
 

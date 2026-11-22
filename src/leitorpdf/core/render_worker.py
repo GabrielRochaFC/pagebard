@@ -6,9 +6,15 @@ the drawing instead and talks over its standard input and output:
 
     request  (one JSON line):  {"op": "open", "path": "..." | null}
                                {"op": "render", "page": 0, "scale": 1.5}
+                               {"op": "ocr", "page": 0, "language": "por",
+                                "tessdata": "/folder", "dpi": 300}
     reply    (one JSON line):  {"ok": true | false, ...}
              for a successful render the line also carries "width", "height",
-             "stride" and "size", and is followed by `size` bytes of RGB pixels.
+             "stride" and "size", and is followed by `size` bytes of RGB pixels;
+             for a successful ocr it carries "size" and is followed by `size`
+             bytes of JSON: the words found, each as
+             [x0, y0, x1, y1, text, block, line, number], in the coordinates of
+             the page as it is displayed.
 
 It ends when its input is closed, which also happens if the application dies.
 """
@@ -34,6 +40,10 @@ def main() -> int:
                 if request["path"] is not None:
                     doc = pymupdf.open(request["path"])
                 _reply(replies, {"ok": True})
+            elif request["op"] == "ocr":
+                words = _recognize(doc[request["page"]], request)
+                payload = json.dumps(words).encode()
+                _reply(replies, {"ok": True, "size": len(payload)}, payload)
             else:
                 scale = request["scale"]
                 pixmap = doc[request["page"]].get_pixmap(
@@ -53,6 +63,28 @@ def main() -> int:
         except Exception:
             _reply(replies, {"ok": False})
     return 0
+
+
+def _recognize(page: pymupdf.Page, request: dict) -> list:
+    """Words read from the page as it is displayed.
+
+    The picture of the page is placed on a fresh, unrotated page first: scans
+    are often stored turned, and recognizing the stored orientation misses the
+    text or returns coordinates that do not match what is on screen.
+    """
+    dpi = request.get("dpi", 300)
+    picture = page.get_pixmap(dpi=dpi, colorspace=pymupdf.csRGB, alpha=False)
+    scratch = pymupdf.open()
+    try:
+        flat = scratch.new_page(width=page.rect.width, height=page.rect.height)
+        flat.insert_image(flat.rect, pixmap=picture)
+        textpage = flat.get_textpage_ocr(
+            language=request["language"], dpi=dpi, full=True, tessdata=request["tessdata"]
+        )
+        words = flat.get_text("words", textpage=textpage, sort=False)
+    finally:
+        scratch.close()
+    return [list(word) for word in words]
 
 
 def _reply(replies, header: dict, payload: bytes = b"") -> None:

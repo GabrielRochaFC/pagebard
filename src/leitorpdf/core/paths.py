@@ -18,3 +18,10 @@ def voices_dir() -> Path:
     path = data_dir() / "voices"
     path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def tessdata_dir() -> Path:
+    """Language data for text recognition (OCR)."""
+    path = data_dir() / "tessdata"
+    path.mkdir(parents=True, exist_ok=True)
+    return path

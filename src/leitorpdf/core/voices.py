@@ -6,12 +6,18 @@ import re
 import tempfile
 import threading
 import urllib.parse
-import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from leitorpdf.core.download import (
+    DownloadCancelled,  # noqa: F401  (raised by download_voice; callers import it here)
+    ProgressCallback,
+    discard,
+    fetch_to_temp,
+    open_url,
+)
 from leitorpdf.core.errors import LeitorError
 
 HF_BASE = "https://huggingface.co/rhasspy/piper-voices/resolve/main"
@@ -42,18 +48,10 @@ _QUALITIES = {"x_low": "muito baixa", "low": "baixa", "medium": "média", "high"
 _QUALITY_ORDER = ["x_low", "low", "medium", "high"]
 
 _KEY = re.compile(r"^([a-z]{2,3}_[A-Z]{2})-([^-]+)-([a-z_]+)$")
-_CHUNK = 64 * 1024
-_TIMEOUT_SECONDS = 30
-_USER_AGENT = "LeitorPDF/0.1"
 
-ProgressCallback = Callable[[int, int], None]
 
 
 class VoiceDownloadError(LeitorError):
-    pass
-
-
-class DownloadCancelled(Exception):
     pass
 
 
@@ -179,7 +177,7 @@ def fetch_catalog(
     cache_file: Path, opener: Callable[[str], Any] | None = None
 ) -> list[CatalogVoice]:
     """The list of downloadable voices; the last good copy when offline."""
-    opener = opener or _open_url
+    opener = opener or open_url
     try:
         with opener(CATALOG_URL) as response:
             raw = response.read()
@@ -218,69 +216,23 @@ def download_voice(
     if _is_complete(model) and _is_complete(config):
         return Voice(key=key, path=model)
 
-    opener = opener or _open_url
+    opener = opener or open_url
     # Each attempt writes to its own temporary files, so an older attempt that
     # is still winding down can never damage a newer one.
     temps: list[Path] = []
     try:
-        config_part = _fetch(config_url, voices_dir, None, cancel, opener, temps)
-        model_part = _fetch(onnx_url, voices_dir, progress, cancel, opener, temps)
+        config_part = fetch_to_temp(config_url, voices_dir, None, cancel, opener, temps)
+        model_part = fetch_to_temp(onnx_url, voices_dir, progress, cancel, opener, temps)
         os.replace(config_part, config)
         # The model goes last: its presence is what marks a voice as installed.
         os.replace(model_part, model)
     except DownloadCancelled:
-        _discard(temps)
+        discard(temps)
         raise
     except Exception as exc:
-        _discard(temps)
+        discard(temps)
         raise VoiceDownloadError(MSG_DOWNLOAD) from exc
     return Voice(key=key, path=model)
-
-
-def _fetch(
-    url: str,
-    folder: Path,
-    progress: ProgressCallback | None,
-    cancel: threading.Event | None,
-    opener: Callable[[str], Any],
-    temps: list[Path],
-) -> Path:
-    """Download url into a new temporary file in folder and return its path."""
-    handle, name = tempfile.mkstemp(dir=folder, suffix=".part")
-    part = Path(name)
-    temps.append(part)
-    done = 0
-    reported = None
-    with os.fdopen(handle, "wb") as out, opener(url) as response:
-        total = _content_length(response)
-        while True:
-            if cancel is not None and cancel.is_set():
-                raise DownloadCancelled()
-            chunk = response.read(_CHUNK)
-            if not chunk:
-                break
-            out.write(chunk)
-            done += len(chunk)
-            if progress is not None:
-                reported = (done, total)
-                progress(done, total)
-    if done < total:
-        raise OSError(f"download ended early: {done} of {total} bytes")
-    if progress is not None and reported != (done, done):
-        progress(done, done)
-    return part
-
-
-def _open_url(url: str) -> Any:
-    request = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
-    return urllib.request.urlopen(request, timeout=_TIMEOUT_SECONDS)
-
-
-def _content_length(response: Any) -> int:
-    try:
-        return max(int(response.headers.get("Content-Length") or 0), 0)
-    except (TypeError, ValueError):
-        return 0
 
 
 def _config_path(model: Path) -> Path:
@@ -289,8 +241,3 @@ def _config_path(model: Path) -> Path:
 
 def _is_complete(path: Path) -> bool:
     return path.is_file() and path.stat().st_size > 0
-
-
-def _discard(paths: list[Path]) -> None:
-    for path in paths:
-        path.unlink(missing_ok=True)

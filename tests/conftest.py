@@ -30,3 +30,45 @@ def make_pdf(tmp_path):
         return path
 
     return build
+
+
+@pytest.fixture
+def make_scanned_pdf(tmp_path):
+    """A PDF whose pages are pictures of text, like a scan; "" gives a blank page."""
+
+    def build(pages, name="scan.pdf", rotation=0):
+        source, scan = pymupdf.open(), pymupdf.open()
+        for text in pages:
+            page = source.new_page()
+            if not text:
+                scan.new_page()
+                continue
+            page.insert_textbox((72, 72, 523, 400), text, fontsize=16)
+            picture = page.get_pixmap(dpi=150)
+            sideways = rotation in (90, 270)
+            target = scan.new_page(width=842, height=595) if sideways else scan.new_page()
+            # Stored turned, with the rotation flag that shows it upright again.
+            target.insert_image(target.rect, pixmap=picture, rotate=rotation)
+            target.set_rotation(rotation)
+        path = tmp_path / name
+        scan.save(path)
+        return path
+
+    return build
+
+
+@pytest.fixture(scope="session")
+def tessdata():
+    """Real Portuguese OCR data, downloaded once per machine session."""
+    import tempfile
+    from pathlib import Path
+
+    from leitorpdf.core import ocr
+
+    folder = Path(tempfile.gettempdir()) / "leitorpdf-test-tessdata"
+    if not ocr.has_language("por", folder):
+        try:
+            ocr.download_language("por", folder)
+        except Exception as exc:  # offline: the tests that need it are skipped
+            pytest.skip(f"OCR data not available: {exc}")
+    return folder
