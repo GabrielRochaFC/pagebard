@@ -262,3 +262,76 @@ def test_shutdown_waits_for_synthesis_in_flight(player, out):
     player.shutdown()
     assert synth_threads() == []
     assert player.state is PlayerState.STOPPED
+
+
+def test_current_index_follows_playback(player, out, rec):
+    assert player.current_index is None
+    out.free = 2
+    player.play(repeat4, RATE, ["aa", "bb"])
+    assert player.current_index is None  # nothing has reached the device yet
+    run(player, lambda: rec.started == [0])
+    assert player.current_index == 0
+    run(player, lambda: rec.started == [0, 1])
+    assert player.current_index == 1
+    run(player, lambda: rec.finished)
+    assert player.current_index is None
+
+
+def test_resynthesize_applies_to_following_sentences(player, out, rec):
+    mode = {"sound": b"a"}
+    out.free = 2
+    player.play(lambda text: mode["sound"] * 4, RATE, ["s"] * 4)
+    run(player, lambda: rec.started == [0])
+    mode["sound"] = b"b"
+    player.resynthesize_upcoming()
+    run(player, lambda: rec.finished)
+    assert bytes(out.written) == b"aaaa" + b"bbbb" * 3
+    assert rec.started == [0, 1, 2, 3]
+    assert rec.finished == 1
+
+
+def test_resynthesize_before_first_audio_restarts_from_start_index(player, out, rec):
+    gate = threading.Event()
+
+    def slow(text):
+        gate.wait(2.0)
+        return text.encode() * 2
+
+    player.play(slow, RATE, ["aa", "bb", "cc"], start=1)
+    player.resynthesize_upcoming()
+    gate.set()
+    run(player, lambda: rec.finished)
+    assert rec.started == [1, 2]
+    assert bytes(out.written) == b"bbbb" + b"cccc"
+
+
+def test_resynthesize_many_times_in_a_row(player, out, rec):
+    out.free = 2
+    player.play(repeat4, RATE, ["aa", "bb", "cc", "dd"])
+    run(player, lambda: rec.started == [0])
+    for _ in range(50):
+        player.resynthesize_upcoming()
+        player.tick()
+    run(player, lambda: rec.finished)
+    assert rec.started == [0, 1, 2, 3]
+    assert bytes(out.written) == b"aaaaaaaa" + b"bbbbbbbb" + b"cccccccc" + b"dddddddd"
+    assert wait_no_synth_threads()
+
+
+def test_resynthesize_when_stopped_is_a_noop(player, rec):
+    player.resynthesize_upcoming()
+    assert rec.states == []
+    assert synth_threads() == []
+
+
+def test_resynthesize_while_paused_stays_paused(player, out, rec):
+    out.free = 2
+    player.play(repeat4, RATE, ["aa", "bb"])
+    run(player, lambda: rec.started == [0])
+    player.pause()
+    player.resynthesize_upcoming()
+    assert player.state is PlayerState.PAUSED
+    assert out.suspended
+    player.resume()
+    run(player, lambda: rec.finished)
+    assert rec.started == [0, 1]

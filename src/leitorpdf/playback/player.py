@@ -36,6 +36,10 @@ class Player(QObject):
         self._pending = b""  # audio of the sentence being sent to the device
         self._offset = 0
         self._heard_audio = False
+        self._current: int | None = None
+        self._synthesize: Callable[[str], bytes] | None = None
+        self._sentences: list[str] = []
+        self._first = 0
         self._timer = QTimer(self)
         self._timer.setInterval(_TICK_MS)
         self._timer.timeout.connect(self.tick)
@@ -43,6 +47,11 @@ class Player(QObject):
     @property
     def state(self) -> PlayerState:
         return self._state
+
+    @property
+    def current_index(self) -> int | None:
+        """Sentence being sent to the device; None before the first one."""
+        return self._current
 
     def play(
         self,
@@ -57,7 +66,10 @@ class Player(QObject):
         except LeitorError as exc:
             self.error.emit(str(exc))
             return
-        self._worker = SynthWorker(synthesize, sentences, start)
+        self._synthesize = synthesize
+        self._sentences = list(sentences)
+        self._first = start
+        self._worker = SynthWorker(synthesize, self._sentences, start)
         self._worker.start()
         self._set_state(PlayerState.LOADING)
         self._timer.start()
@@ -83,7 +95,21 @@ class Player(QObject):
         self._pending = b""
         self._offset = 0
         self._heard_audio = False
+        self._current = None
         self._set_state(PlayerState.STOPPED)
+
+    def resynthesize_upcoming(self) -> None:
+        """Throw away audio prepared ahead and synthesize it again.
+
+        For when the way of speaking changed (speed, for instance). The
+        sentence being heard ends as it is; the next ones use the new setting.
+        """
+        if self._state is PlayerState.STOPPED or self._synthesize is None:
+            return
+        following = self._first if self._current is None else self._current + 1
+        self._retire_worker()
+        self._worker = SynthWorker(self._synthesize, self._sentences, following)
+        self._worker.start()
 
     def shutdown(self, timeout: float = 3.0) -> None:
         """Stop and wait for synthesis threads to end (before the app exits)."""
@@ -127,6 +153,7 @@ class Player(QObject):
             self._pending = item.audio
             self._offset = 0
             self._heard_audio = True
+            self._current = item.index
             self._set_state(PlayerState.PLAYING)
             self.sentence_started.emit(item.index)
 
