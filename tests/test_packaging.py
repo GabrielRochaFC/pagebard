@@ -37,7 +37,16 @@ def test_manifest_describes_this_app():
         "--filesystem=home",  # open PDFs, save MP3s, drag and drop
     ):
         assert permission in data["finish-args"]
-    assert [module["name"] for module in data["modules"]] == ["python-deps", "leitorpdf"]
+    assert [module["name"] for module in data["modules"]] == ["python-deps", "krb5", "leitorpdf"]
+
+
+def test_kerberos_library_is_bundled_from_a_pinned_source():
+    # Qt's network and multimedia libraries in the PySide6 wheels load
+    # libgssapi_krb5, which the freedesktop runtime does not ship.
+    [krb5] = [module for module in manifest()["modules"] if module["name"] == "krb5"]
+    [source] = krb5["sources"]
+    assert source["url"].startswith("https://kerberos.org/dist/krb5/")
+    assert len(source["sha256"]) == 64
 
 
 def test_requirements_pin_what_the_app_was_tested_with():

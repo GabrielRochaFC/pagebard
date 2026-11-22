@@ -18,6 +18,9 @@ def test_quiet_qt_logging_silences_known_noise(qapp):
     assert not QLoggingCategory("qt.qpa.wayland.textinput").isWarningEnabled()
     assert not QLoggingCategory("qt.qpa.services").isWarningEnabled()
     assert not QLoggingCategory("qt.multimedia.ffmpeg").isInfoEnabled()
+    # Inside the Flatpak sandbox Qt cannot reach PipeWire and uses PulseAudio.
+    assert not QLoggingCategory("qt.multimedia.pipewire.registry").isWarningEnabled()
+    assert QLoggingCategory("qt.multimedia.pipewire").isWarningEnabled()
     assert QLoggingCategory("qt.qpa.wayland.textinput").isCriticalEnabled()
     assert QLoggingCategory("qt.some.other.area").isWarningEnabled()
 

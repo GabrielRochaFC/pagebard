@@ -32,14 +32,16 @@ def quiet_qt_logging() -> None:
     """Silence harmless chatter Qt prints on a normal run.
 
     Wayland text-input bookkeeping, the desktop portal refusing a second
-    registration, and the FFmpeg version banner say nothing about this app.
-    QT_LOGGING_RULES in the environment still overrides this.
+    registration, the FFmpeg version banner, and (inside the Flatpak sandbox)
+    PipeWire being out of reach before Qt settles for PulseAudio say nothing
+    about this app. QT_LOGGING_RULES in the environment still overrides this.
     """
     QLoggingCategory.setFilterRules(
         "qt.qpa.wayland.textinput.warning=false\n"
         "qt.qpa.wayland.textinput.info=false\n"
         "qt.qpa.services.warning=false\n"
-        "qt.multimedia.ffmpeg.info=false"
+        "qt.multimedia.ffmpeg.info=false\n"
+        "qt.multimedia.pipewire.registry.warning=false"
     )
 
 
