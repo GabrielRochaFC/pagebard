@@ -147,3 +147,117 @@ def test_rotated_page_words_match_what_is_displayed(tmp_path):
     # On screen the line now runs top to bottom, near the right edge.
     assert rects[0][1] < rects[1][1] < rects[2][1]
     assert all(700 < r[0] < r[2] < 842 for r in rects)
+
+
+# ---- documents made by a real word processor (LibreOffice) -----------------------
+# The same text laid out four ways: single or 1.5 line spacing, one or two columns,
+# justified, with automatic hyphenation (which LibreOffice marks with U+00AD).
+
+from pathlib import Path  # noqa: E402
+
+FIXTURES = Path(__file__).parent / "fixtures"
+LAYOUTS = ["lo_single", "lo_abnt15", "lo_twocol", "lo_twocol15"]
+
+
+def fixture(name):
+    return load_pdf(FIXTURES / f"{name}.pdf")
+
+
+def flat(doc):
+    return " ".join(" ".join(doc.pages).split())
+
+
+@pytest.mark.parametrize("name", LAYOUTS)
+def test_soft_hyphens_are_rejoined(name):
+    doc = fixture(name)
+    text = flat(doc)
+    assert "­" not in text
+    assert "Tornou-se, desde então, referência" in text
+    assert "constitucionalismo contemporâneo." in text
+    assert "transformações extraordinariamente" in text
+    assert "República Federativa do Brasil" in text
+
+
+@pytest.mark.parametrize("name", LAYOUTS)
+def test_real_hyphen_survives_a_line_break_when_the_file_marks_soft_ones(name):
+    assert "1988, estabeleceu-se como o marco" in flat(fixture(name))
+
+
+@pytest.mark.parametrize("name", LAYOUTS)
+def test_words_still_map_to_the_text_after_hyphen_handling(name):
+    doc = fixture(name)
+    for page_text, words in zip(doc.pages, doc.words):
+        rebuilt = "".join(page_text[w.start : w.end] for w in words)
+        assert rebuilt == "".join(page_text.split())
+        assert all(w.start < w.end for w in words)
+
+
+def test_line_spacing_does_not_split_paragraphs_into_lines():
+    single, spaced = fixture("lo_single"), fixture("lo_abnt15")
+    first_paragraph = (
+        "A Constituição da República Federativa do Brasil, promulgada em 1988, "
+        "estabeleceu-se como o marco fundamental da redemocratização do país, "
+        "garantindo-lhe um extenso rol de direitos fundamentais e reorganizando "
+        "profundamente as instituições políticas brasileiras. Tornou-se, desde então, "
+        "referência obrigatória para os estudiosos do constitucionalismo contemporâneo."
+    )
+    for doc in (single, spaced):
+        paragraphs = doc.pages[0].split("\n\n")
+        assert paragraphs[0] == "Universidade Federal — Relatório Anual de Atividades"
+        assert paragraphs[1] == first_paragraph
+        assert paragraphs[2].startswith("Durante o período de 1990-1995, a economia")
+
+
+def test_two_columns_with_wide_line_spacing_read_like_the_compact_layout():
+    compact, spaced = fixture("lo_twocol"), fixture("lo_twocol15")
+    assert spaced.pages[0].split("\n\n")[1].startswith(
+        "A Constituição da República Federativa do Brasil, promulgada em 1988, estabeleceu-se"
+    )
+    # Same words in the same order on the first page, whatever the spacing.
+    spaced_words = flat(spaced).split()[:150]
+    assert spaced_words == flat(compact).split()[:150]
+
+
+def test_short_lines_stay_separate(tmp_path):
+    # A list at 1.5 spacing: no line is "full", so none continues on the next.
+    path = tmp_path / "lista.pdf"
+    doc = pymupdf.open()
+    page = doc.new_page()
+    items = ["Item um", "Item dois bem maior", "Item três", "Item quatro", "Item cinco", "Seis"]
+    for row, item in enumerate(items):
+        page.insert_text((72, 100 + 18 * row), item, fontsize=12)
+    page.insert_textbox(
+        (72, 300, 523, 500),
+        "Um parágrafo comum, largo o bastante para mostrar onde fica a margem direita "
+        "desta página, com várias linhas completas de texto corrido para comparar.",
+        fontsize=12,
+    )
+    doc.save(path)
+    doc.close()
+    assert load_pdf(path).pages[0].split("\n\n")[:6] == items
+
+
+def test_heading_in_a_bigger_font_stays_apart_from_the_text_below(tmp_path):
+    path = tmp_path / "titulo.pdf"
+    doc = pymupdf.open()
+    page = doc.new_page()
+    page.insert_text((72, 100), "Um título que ocupa a largura quase toda da página aqui", fontsize=16)
+    page.insert_text((72, 118), "Texto logo abaixo do título, em letra menor.", fontsize=11)
+    doc.save(path)
+    doc.close()
+    assert load_pdf(path).pages[0] == (
+        "Um título que ocupa a largura quase toda da página aqui\n\n"
+        "Texto logo abaixo do título, em letra menor."
+    )
+
+
+def test_pdf_without_pages_is_invalid(tmp_path):
+    path = tmp_path / "vazio.pdf"
+    path.write_bytes(
+        b"%PDF-1.4\n"
+        b"1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n"
+        b"2 0 obj << /Type /Pages /Kids [] /Count 0 >> endobj\n"
+        b"trailer << /Root 1 0 R >>\n%%EOF\n"
+    )
+    with pytest.raises(PdfError, match=re.escape(MSG_INVALID)):
+        load_pdf(path)

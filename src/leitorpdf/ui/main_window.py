@@ -228,6 +228,9 @@ class MainWindow(QMainWindow):
         self.last_page_spin.setToolTip("Última página a ler")
         for spin in (self.first_page_spin, self.last_page_spin):
             spin.setMinimumWidth(64)
+            # Apply a typed number when it is complete (Enter or leaving the
+            # field), not digit by digit: "25" must not pass through "2".
+            spin.setKeyboardTracking(False)
         self.first_page_spin.valueChanged.connect(self._on_first_page_changed)
         self.last_page_spin.valueChanged.connect(self._on_last_page_changed)
         pages_title.setBuddy(self.first_page_spin)

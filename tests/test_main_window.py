@@ -948,3 +948,21 @@ def test_dropping_on_the_page_area_reaches_the_window(shown, qapp, make_pdf):
     assert enter.isAccepted()
     QApplication.sendEvent(viewport, QDropEvent(spot, copy, mime, LEFT, NONE))
     wait_until(qapp, lambda: shown.reading.text == "Solto sobre a página.")
+
+
+def test_typing_a_page_number_applies_it_whole(window, qapp, make_pdf, player, out, synth):
+    # Regression: each keystroke used to count as a new value, so typing "25"
+    # passed through "2" and dragged the first page down with it.
+    show_active(qapp, window)
+    open_and_wait(qapp, window, make_pdf([f"Página {n}." for n in range(1, 31)]))
+    window.first_page_spin.setValue(10)
+    start_long_playback(qapp, window, player, out, synth)
+    spin = window.last_page_spin
+    spin.setFocus()
+    spin.selectAll()
+    QTest.keyClicks(spin, "25")
+    assert page_range(window) == (10, 30)  # nothing applied while typing
+    assert player.state is PlayerState.PLAYING
+    QTest.keyClick(spin, Qt.Key.Key_Return)
+    assert page_range(window) == (10, 25)
+    assert player.state is PlayerState.STOPPED
