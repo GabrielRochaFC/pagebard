@@ -47,9 +47,14 @@ offline (Piper, só CPU). Público: usuários comuns, que não usam terminal.
 
 **Empacotamento**
 
-- Flatpak (escolhido): o runtime já traz Python 3.14 e ffmpeg com MP3;
-  `io.qt.PySide.BaseApp` fornece o PySide6; sandbox; um único arquivo
-  `.flatpak` instalável pela loja de aplicativos.
+- Flatpak (escolhido): o runtime freedesktop 26.08 já traz Python 3.14 e
+  ffmpeg com MP3; sandbox; um único arquivo `.flatpak` instalável pela loja
+  de aplicativos. Como foi feito: as bibliotecas Python vêm do PyPI, nas
+  mesmas versões usadas no desenvolvimento (PySide6 6.12), em vez do
+  `io.qt.PySide.BaseApp` previsto no início — assim o pacote tem exatamente
+  o Qt que foi testado. Consequências: a construção precisa de rede (não
+  serve para o Flathub como está) e a biblioteca Kerberos, que o Qt carrega
+  e o runtime não traz, é compilada junto.
 - AppImage: um arquivo executável, mas exigiria embutir Python, Qt e ffmpeg,
   e não integra com a loja nem com o menu sem ferramenta extra.
 
@@ -68,8 +73,9 @@ offline (Piper, só CPU). Público: usuários comuns, que não usam terminal.
 **OCR**
 
 - Motor Tesseract embutido no PyMuPDF + `por.traineddata` baixado sob
-  demanda (escolhido, a confirmar com teste na fase de OCR): nenhum binário
-  extra no Flatpak.
+  demanda (escolhido e confirmado): nenhum binário extra no Flatpak. O
+  reconhecimento é feito sobre a imagem da página como ela é exibida, para
+  funcionar em páginas armazenadas giradas, e roda no processo filho.
 - Binário `tesseract` compilado como módulo do Flatpak: plano B.
 
 **Visualização do documento** (decidido depois do MVP, a pedido do dono:
@@ -116,6 +122,19 @@ trecho, que é lido sozinho; o intervalo de páginas limita o resto.
 
 Áudio: a voz é mono, mas o dispositivo recebe dois canais iguais (um stream
 de um canal sai só no lado esquerdo no PipeWire).
+
+Threads e processos: o que é lento roda fora da thread da interface e devolve
+o resultado por fila comum; essas threads nunca recebem objetos do Qt (um
+objeto do Qt liberado por outra thread derruba o programa). O trabalho pesado
+do PyMuPDF — desenhar páginas e OCR — roda num processo filho
+(`core/render_worker.py`), porque o PyMuPDF segura a trava global do Python
+enquanto trabalha e congelaria a janela.
+
+Outros módulos: `core/download.py` (downloads que nunca deixam arquivo pela
+metade), `core/export.py` (MP3 via ffmpeg), `core/ocr.py`,
+`core/worker_client.py`, `ui/progress.py` (diálogo de progresso cancelável),
+`ui/voice_manager.py`, `ui/shortcuts_dialog.py`. Preferências (voz,
+velocidade, tamanho do texto, pasta, janela) em `QSettings`.
 
 Dados do usuário (vozes, tessdata) em `$XDG_DATA_HOME/leitorpdf/`.
 Voz padrão: `pt_BR-faber-medium`, baixada no primeiro uso.
