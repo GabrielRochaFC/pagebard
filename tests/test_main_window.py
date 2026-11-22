@@ -1054,3 +1054,157 @@ def test_manager_can_install_the_first_voice(make_window, tmp_path):
     assert window.voice_combo.count() == 0
     window.voices_button.click()
     assert window.voice_combo.currentText() == "Faber · Português (Brasil) · média"
+
+
+# ---- export to MP3 ------------------------------------------------------------------
+
+from PySide6.QtCore import QTimer  # noqa: E402
+
+from leitorpdf.core.export import MSG_EXPORT, ExportCancelled, ExportError  # noqa: E402
+
+
+class FakeExporter:
+    def __init__(self, error=None, wait_for_cancel=False):
+        self.calls = []
+        self.error = error
+        self.wait_for_cancel = wait_for_cancel
+
+    def __call__(self, texts, synthesize, sample_rate, dest, progress=None, cancel=None, title=None):
+        self.calls.append(dict(texts=list(texts), rate=sample_rate, dest=dest, title=title))
+        if self.wait_for_cancel:
+            cancel.wait(3.0)
+            raise ExportCancelled()
+        if self.error is not None:
+            raise self.error
+        for index, text in enumerate(texts):
+            synthesize(text)
+            progress(index + 1, len(texts))
+
+
+@pytest.fixture
+def exporter():
+    return FakeExporter()
+
+
+@pytest.fixture
+def save_as(monkeypatch, tmp_path):
+    """Answer of the "save as" dialog; records how it was asked."""
+    asked = {"answer": str(tmp_path / "saida"), "calls": []}
+
+    def get_save_file_name(parent, caption, suggestion, filters, *args, **kwargs):
+        asked["calls"].append((caption, suggestion, filters))
+        return asked["answer"], filters
+
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", get_save_file_name)
+    return asked
+
+
+def test_export_button_needs_text(make_window, qapp, make_pdf, exporter, notes):
+    window = make_window(exporter=exporter)
+    assert window.export_button.text() == "Exportar MP3…"
+    assert not window.export_button.isEnabled()
+    open_and_wait(qapp, window, make_pdf(["Um."]))
+    assert window.export_button.isEnabled()
+    window.open_path(make_pdf([""], name="vazio.pdf"))
+    wait_until(qapp, lambda: notes)
+    assert not window.export_button.isEnabled()
+
+
+def test_export_writes_the_chosen_pages(make_window, qapp, make_pdf, exporter, save_as, tmp_path):
+    window = make_window(exporter=exporter)
+    open_and_wait(qapp, window, make_pdf(["Um.", "Dois.", "Três."], name="livro.pdf"))
+    window.first_page_spin.setValue(2)
+    window.export_button.click()
+    [call] = exporter.calls
+    assert call == dict(
+        texts=["Dois.", "Três."], rate=22050, dest=tmp_path / "saida.mp3", title="livro"
+    )
+    [(caption, suggestion, filters)] = save_as["calls"]
+    assert caption == "Exportar para MP3"
+    assert suggestion == str(tmp_path / "livro.mp3")
+    assert filters == "Áudio MP3 (*.mp3)"
+    assert status(window) == f"MP3 gravado em {tmp_path / 'saida.mp3'}"
+
+
+def test_export_keeps_an_mp3_extension_as_typed(make_window, qapp, make_pdf, exporter, save_as, tmp_path):
+    save_as["answer"] = str(tmp_path / "Meu Áudio.MP3")
+    window = make_window(exporter=exporter)
+    open_and_wait(qapp, window, make_pdf(["Um."]))
+    window.export_button.click()
+    assert exporter.calls[0]["dest"] == tmp_path / "Meu Áudio.MP3"
+
+
+def test_export_uses_the_current_speed(make_window, qapp, make_pdf, exporter, save_as, synth):
+    window = make_window(exporter=exporter)
+    open_and_wait(qapp, window, make_pdf(["Um. Dois."]))
+    window.speed_slider.setValue(20)
+    window.export_button.click()
+    assert synth.spoken == ["Um.", "Dois."]
+    assert synth.scales == [0.5, 0.5]
+
+
+def test_export_ignores_selection_and_start_point(shown, qapp, save_as, synth, monkeypatch):
+    exporter = FakeExporter()
+    monkeypatch.setattr(shown, "_exporter", exporter)
+    click_word(shown, 4)
+    drag_words(shown, 0, 1)
+    shown.export_button.click()
+    assert exporter.calls[0]["texts"] == ["Um dois.", "Três quatro.", "Cinco seis."]
+
+
+def test_export_stops_playback(make_window, qapp, make_pdf, exporter, save_as, player, out, synth):
+    save_as["answer"] = ""
+    window = make_window(exporter=exporter)
+    open_and_wait(qapp, window, make_pdf(["Olá mundo."]))
+    start_long_playback(qapp, window, player, out, synth)
+    window.export_button.click()
+    assert player.state is PlayerState.STOPPED
+    assert exporter.calls == []  # the "save as" dialog was cancelled
+
+
+def test_export_cancel_during_progress(make_window, qapp, make_pdf, save_as, notes):
+    exporter = FakeExporter(wait_for_cancel=True)
+    window = make_window(exporter=exporter)
+    open_and_wait(qapp, window, make_pdf(["Um."]))
+    QTimer.singleShot(100, lambda: QApplication.activeModalWidget().cancel())
+    window.export_button.click()
+    assert status(window) == "Exportação cancelada."
+    assert notes == []
+
+
+def test_export_error_is_shown(make_window, qapp, make_pdf, save_as, notes):
+    window = make_window(exporter=FakeExporter(error=ExportError(MSG_EXPORT)))
+    open_and_wait(qapp, window, make_pdf(["Um."]))
+    before = status(window)
+    window.export_button.click()
+    assert notes == [MSG_EXPORT]
+    assert status(window) == before
+
+
+def test_export_range_without_text(make_window, qapp, make_pdf, exporter, save_as, notes):
+    window = make_window(exporter=exporter)
+    open_and_wait(qapp, window, make_pdf(["Um.", "", "Três."]))
+    window.first_page_spin.setValue(2)
+    window.last_page_spin.setValue(2)
+    window.export_button.click()
+    assert notes == [MSG_EMPTY_RANGE]
+    assert exporter.calls == [] and save_as["calls"] == []
+
+
+def test_export_without_voice_offers_download(
+    make_window, qapp, make_pdf, exporter, save_as, tmp_path, monkeypatch
+):
+    asked = []
+
+    def question(parent, title, text, *args, **kwargs):
+        asked.append(text)
+        return QMessageBox.StandardButton.No
+
+    monkeypatch.setattr(QMessageBox, "question", question)
+    empty = tmp_path / "sem-vozes"
+    empty.mkdir()
+    window = make_window(voices_dir=empty, exporter=exporter)
+    open_and_wait(qapp, window, make_pdf(["Um."]))
+    window.export_button.click()
+    assert asked == [MSG_NEED_VOICE]
+    assert exporter.calls == []

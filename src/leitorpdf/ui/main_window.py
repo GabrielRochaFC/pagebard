@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
 
 from leitorpdf.core import paths
 from leitorpdf.core.errors import LeitorError, user_message
+from leitorpdf.core.export import ExportCancelled, export_mp3
 from leitorpdf.core.pdf import PdfText, load_pdf
 from leitorpdf.core.reading import Reading, build_reading
 from leitorpdf.core.segmenter import Sentence
@@ -44,6 +45,7 @@ from leitorpdf.ui.messages import (
     show_error,
 )
 from leitorpdf.ui.pdf_view import PdfView
+from leitorpdf.ui.progress import run_with_progress
 from leitorpdf.ui.tasks import run_async
 from leitorpdf.ui.voice_download import download_default_voice
 from leitorpdf.ui.voice_manager import VoiceManagerDialog
@@ -110,8 +112,11 @@ class MainWindow(QMainWindow):
         synth_factory: Callable[[Voice], Any] | None = None,
         offer_download: bool = True,
         voice_manager: Callable[[QWidget], Any] | None = None,
+        exporter: Callable[..., None] = export_mp3,
     ) -> None:
         super().__init__()
+        self._exporter = exporter
+        self._doc_path: Path | None = None
         self._player = player if player is not None else Player(parent=self)
         self._voices_dir = voices_dir if voices_dir is not None else paths.voices_dir()
         self._notify = notify or (lambda text: show_error(self, text))
@@ -184,6 +189,11 @@ class MainWindow(QMainWindow):
         self.stop_button.setToolTip("Parar a leitura (Esc)")
         self.stop_button.clicked.connect(self._player.stop)
 
+        self.export_button = QPushButton("Exportar MP3…")
+        self.export_button.setToolTip("Gravar a leitura das páginas escolhidas num arquivo MP3")
+        self.export_button.setEnabled(False)
+        self.export_button.clicked.connect(self._export)
+
         voice_label = QLabel("Voz:")
         self.voice_combo = QComboBox()
         self.voice_combo.setMinimumWidth(240)
@@ -201,6 +211,7 @@ class MainWindow(QMainWindow):
         row1.addSpacing(12)
         row1.addWidget(self.play_button)
         row1.addWidget(self.stop_button)
+        row1.addWidget(self.export_button)
         row1.addStretch(1)
         row1.addWidget(voice_label)
         row1.addWidget(self.voice_combo)
@@ -347,9 +358,11 @@ class MainWindow(QMainWindow):
         self._playing = []
         self._start_sentence = None
         self.pdf_view.set_document(doc.path, reading)
+        self._doc_path = doc.path
         self._reset_page_range()
         self._update_zoom_controls()
         self.play_button.setEnabled(bool(reading.sentences))
+        self.export_button.setEnabled(bool(reading.sentences))
         count = reading.page_count
         self._doc_status = f"{doc.path.name} — {count} página{'' if count == 1 else 's'}"
         if reading.sentences:
@@ -600,21 +613,80 @@ class MainWindow(QMainWindow):
         if not sentences:
             self._notify(MSG_EMPTY_RANGE)
             return
-        voice = self.voice_combo.currentData()
-        if voice is None:
-            voice = self._offer_voice_download()
-            if voice is None:
-                return
-        try:
-            speech = self._speech_for(voice)
-            sample_rate = speech.synth.sample_rate
-        except LeitorError as exc:
-            self._notify(str(exc))
+        ready = self._voice_ready()
+        if ready is None:
             return
+        speech, sample_rate = ready
         self._playing = sentences
         self._player.play(
             speech.speak, sample_rate, [sentence.text for sentence in sentences], start
         )
+
+    def _voice_ready(self) -> tuple[_Speech, int] | None:
+        """The voice to speak with and its sample rate; None if there is none."""
+        voice = self.voice_combo.currentData()
+        if voice is None:
+            voice = self._offer_voice_download()
+            if voice is None:
+                return None
+        try:
+            speech = self._speech_for(voice)
+            return speech, speech.synth.sample_rate
+        except LeitorError as exc:
+            self._notify(str(exc))
+            return None
+
+    # ---- export ------------------------------------------------------------------
+
+    def _export(self) -> None:
+        """Save the reading of the chosen pages as an MP3 file."""
+        if self._reading is None or self._doc_path is None:
+            return
+        self._player.stop()
+        first, last = self._reading.slice_for_pages(
+            self.first_page_spin.value(), self.last_page_spin.value()
+        )
+        texts = [sentence.text for sentence in self._reading.sentences[first:last]]
+        if not texts:
+            self._notify(MSG_EMPTY_RANGE)
+            return
+        ready = self._voice_ready()
+        if ready is None:
+            return
+        speech, sample_rate = ready
+        chosen, _ = QFileDialog.getSaveFileName(
+            self,
+            "Exportar para MP3",
+            str(self._doc_path.with_suffix(".mp3")),
+            "Áudio MP3 (*.mp3)",
+        )
+        if not chosen:
+            return
+        dest = Path(chosen)
+        if dest.suffix.lower() != ".mp3":
+            dest = dest.with_name(dest.name + ".mp3")
+
+        # Everything the worker thread touches is plain: no widgets, no self.
+        exporter, title = self._exporter, self._doc_path.stem
+        voice = _Speech(speech.synth)
+        voice.length_scale = self._length_scale
+
+        def work(report, cancel):
+            def progress(done: int, total: int) -> None:
+                report(done, total, f"Exportando para MP3… frase {done} de {total}")
+
+            exporter(
+                texts, voice.speak, sample_rate, dest,
+                progress=progress, cancel=cancel, title=title,
+            )  # fmt: skip
+
+        status, _ = run_with_progress(
+            self, "Exportando para MP3…", work, self._notify, cancelled=(ExportCancelled,)
+        )
+        if status == "done":
+            self.statusBar().showMessage(f"MP3 gravado em {dest}")
+        elif status == "cancelled":
+            self.statusBar().showMessage("Exportação cancelada.")
 
     def _on_sentence_started(self, index: int) -> None:
         if self._reading is None or index >= len(self._playing):
