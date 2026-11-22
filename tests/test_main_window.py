@@ -976,3 +976,81 @@ def test_range_edit_keeps_a_start_point_that_is_still_inside(shown):
     shown.first_page_spin.setValue(2)  # now page 1 is out (and last follows to 2)
     assert shown.pdf_view.start_marker() is None
     assert shown.play_button.text() == PLAY
+
+
+# ---- voice manager ------------------------------------------------------------------
+
+
+class FakeManager:
+    """Stands in for the voice manager dialog: `action` is what the user did in it."""
+
+    def __init__(self, action):
+        self.action = action
+        self.opened = 0
+        self.parent = None
+
+    def __call__(self, parent):
+        self.parent = parent
+        return self
+
+    def exec(self):
+        self.opened += 1
+        self.action()
+
+
+def test_voices_button_opens_the_manager_and_reloads(make_window, voices_dir):
+    manager = FakeManager(lambda: add_voice(voices_dir, "pt_BR-nova-medium"))
+    window = make_window(voice_manager=manager)
+    assert window.voices_button.text() == "Vozes…"
+    window.voices_button.click()
+    assert manager.opened == 1 and manager.parent is window
+    assert window.voice_combo.count() == 2
+    assert window.voice_combo.currentText() == "Fake · Português (Brasil) · média"
+
+
+def test_reading_goes_on_when_other_voices_change(
+    make_window, qapp, make_pdf, player, out, synth, voices_dir
+):
+    window = make_window(
+        voice_manager=FakeManager(lambda: add_voice(voices_dir, "pt_BR-nova-medium"))
+    )
+    open_and_wait(qapp, window, make_pdf(["Olá mundo."]))
+    start_long_playback(qapp, window, player, out, synth)
+    window.voices_button.click()
+    assert player.state is PlayerState.PLAYING
+
+
+def test_removing_the_voice_in_use_stops_reading_and_picks_another(
+    make_window, qapp, make_pdf, player, out, synth, voices_dir
+):
+    add_voice(voices_dir, "pt_BR-outra-medium")
+    made = []
+
+    def factory(voice):
+        made.append(voice.key)
+        return synth
+
+    def remove_it():
+        (voices_dir / "pt_BR-outra-medium.onnx").unlink()
+
+    window = make_window(voice_manager=FakeManager(remove_it), synth_factory=factory)
+    open_and_wait(qapp, window, make_pdf(["Olá mundo."]))
+    window.voice_combo.setCurrentIndex(1)
+    start_long_playback(qapp, window, player, out, synth)
+    window.voices_button.click()
+    assert player.state is PlayerState.STOPPED
+    assert window.voice_combo.count() == 1
+    assert window.voice_combo.currentData().key == "pt_BR-fake-medium"
+    window.play_button.click()
+    assert made == ["pt_BR-outra-medium", "pt_BR-fake-medium"]
+
+
+def test_manager_can_install_the_first_voice(make_window, tmp_path):
+    empty = tmp_path / "sem-vozes"
+    empty.mkdir()
+    window = make_window(
+        voices_dir=empty, voice_manager=FakeManager(lambda: add_voice(empty, DEFAULT_VOICE_KEY))
+    )
+    assert window.voice_combo.count() == 0
+    window.voices_button.click()
+    assert window.voice_combo.currentText() == "Faber · Português (Brasil) · média"

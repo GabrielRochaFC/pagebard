@@ -80,7 +80,7 @@ def test_stuck_download_ending_after_the_dialog_is_gone_is_harmless(qapp, tmp_pa
     import threading
 
     def download_threads():
-        return [t for t in threading.enumerate() if t.name == "leitorpdf-download"]
+        return [t for t in threading.enumerate() if t.name == "leitorpdf-work"]
 
     for _ in range(15):
         release = threading.Event()

@@ -46,6 +46,7 @@ from leitorpdf.ui.messages import (
 from leitorpdf.ui.pdf_view import PdfView
 from leitorpdf.ui.tasks import run_async
 from leitorpdf.ui.voice_download import download_default_voice
+from leitorpdf.ui.voice_manager import VoiceManagerDialog
 
 _HINT = "clique no texto para escolher onde começar; arraste para ler só um trecho"
 _SPEED_MIN, _SPEED_MAX, _SPEED_DEFAULT = 5, 20, 10  # tenths: 0,5× to 2,0×
@@ -108,12 +109,18 @@ class MainWindow(QMainWindow):
         notify: Callable[[str], None] | None = None,
         synth_factory: Callable[[Voice], Any] | None = None,
         offer_download: bool = True,
+        voice_manager: Callable[[QWidget], Any] | None = None,
     ) -> None:
         super().__init__()
         self._player = player if player is not None else Player(parent=self)
         self._voices_dir = voices_dir if voices_dir is not None else paths.voices_dir()
         self._notify = notify or (lambda text: show_error(self, text))
         self._synth_factory = synth_factory or (lambda voice: Synthesizer(voice.path))
+        self._voice_manager = voice_manager or (
+            lambda parent: VoiceManagerDialog(
+                self._voices_dir, paths.data_dir() / "voices.json", parent
+            )
+        )
         self._speech: _Speech | None = None
         self._speech_key: str | None = None
         self._reading: Reading | None = None
@@ -184,6 +191,9 @@ class MainWindow(QMainWindow):
         self.voice_combo.setToolTip("Voz usada na leitura")
         self.voice_combo.currentIndexChanged.connect(self._on_voice_changed)
         voice_label.setBuddy(self.voice_combo)
+        self.voices_button = QPushButton("Vozes…")
+        self.voices_button.setToolTip("Baixar ou remover vozes")
+        self.voices_button.clicked.connect(self._open_voice_manager)
 
         row1 = QHBoxLayout()
         row1.setSpacing(8)
@@ -194,6 +204,7 @@ class MainWindow(QMainWindow):
         row1.addStretch(1)
         row1.addWidget(voice_label)
         row1.addWidget(self.voice_combo)
+        row1.addWidget(self.voices_button)
 
         speed_title = QLabel("Velocidade:")
         self.speed_slider = QSlider(Qt.Orientation.Horizontal)
@@ -438,6 +449,14 @@ class MainWindow(QMainWindow):
 
     def _on_voice_changed(self, _index: int) -> None:
         self._player.stop()
+
+    def _open_voice_manager(self) -> None:
+        before = self.voice_combo.currentData()
+        self._voice_manager(self).exec()
+        self._reload_voices(select_key=before.key if before is not None else None)
+        after = self.voice_combo.currentData()
+        if before is not None and (after is None or after.key != before.key):
+            self._player.stop()  # the voice being used is gone
 
     def _offer_voice_download(self) -> Voice | None:
         yes = QMessageBox.StandardButton.Yes
