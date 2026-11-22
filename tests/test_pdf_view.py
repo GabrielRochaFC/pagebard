@@ -377,3 +377,27 @@ def test_page_without_text_ignores_the_mouse(make_view, make_pdf, qapp):
     assert signals.selections == []
     assert signals.background >= 1
     assert view.selection() is None
+
+
+def test_fast_scrolling_keeps_rendering_and_memory_bounded(make_view, make_pdf, qapp):
+    # Regression: scroll events closer together than the poll interval kept
+    # restarting the poll timer, so no page ever arrived during the scroll and
+    # everything rendered meanwhile was kept at the end.
+    path = make_pdf([f"Página {n}." for n in range(1, 81)])
+    view = make_view()
+    view.set_document(path, build_reading(load_pdf(path)))
+    wait_until(qapp, lambda: 0 in view.rendered_pages())
+    bar = view.verticalScrollBar()
+    step = bar.maximum() // 400
+    most_pages_held = 0
+    moments_with_a_page = 0
+    for position in range(0, bar.maximum(), step):
+        bar.setValue(position)
+        time.sleep(0.004)  # faster than the 15 ms poll
+        qapp.processEvents()
+        most_pages_held = max(most_pages_held, len(view.rendered_pages()))
+        moments_with_a_page += bool(view.rendered_pages())
+    assert moments_with_a_page > 100  # pages kept arriving while scrolling
+    wait_until(qapp, lambda: view.current_page() - 1 in view.rendered_pages())
+    assert most_pages_held <= 4
+    assert len(view.rendered_pages()) <= 3

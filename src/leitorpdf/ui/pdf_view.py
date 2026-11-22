@@ -59,6 +59,7 @@ class PdfView(QAbstractScrollArea):
         self._pixmaps: dict[int, QPixmap] = {}
         self._stale: dict[int, QPixmap] = {}  # old-zoom images shown meanwhile
         self._requested: set[int] = set()
+        self._wanted: set[int] = set()  # pages worth having in memory right now
         self._page = 0
         self._highlight: Range | None = None
         self._marker: Range | None = None
@@ -94,6 +95,7 @@ class PdfView(QAbstractScrollArea):
         self._pixmaps.clear()
         self._stale.clear()
         self._requested.clear()
+        self._wanted.clear()
         self._highlight = self._marker = self._selection = None
         self._overlay_rects.clear()
         self._pressed = self._dragging = False
@@ -302,6 +304,7 @@ class PdfView(QAbstractScrollArea):
         else:
             wanted = set()
         scale = self._scale()
+        self._wanted = wanted
         self._renderer.set_wanted((page, scale) for page in wanted)
         for cache in (self._pixmaps, self._stale):
             for page in [page for page in cache if page not in wanted]:
@@ -310,7 +313,9 @@ class PdfView(QAbstractScrollArea):
         for page in sorted(wanted - self._requested - set(self._pixmaps)):
             self._requested.add(page)
             self._renderer.request(page, scale)
-        if self._requested:
+        # Not restarted while running: scroll events arrive faster than the
+        # interval, and a timer restarted each time would never fire.
+        if self._requested and not self._poll_timer.isActive():
             self._poll_timer.start()
 
         middle = self.verticalScrollBar().value() + self.viewport().height() // 2
@@ -325,8 +330,8 @@ class PdfView(QAbstractScrollArea):
             if generation != self._generation or rendered_scale != scale:
                 continue
             self._requested.discard(page)
-            if image is None or page >= len(self._tops):
-                continue
+            if image is None or page not in self._wanted:
+                continue  # failed, or scrolled away while it was being drawn
             pixmap = QPixmap.fromImage(image)
             pixmap.setDevicePixelRatio(self.devicePixelRatioF())
             self._pixmaps[page] = pixmap
