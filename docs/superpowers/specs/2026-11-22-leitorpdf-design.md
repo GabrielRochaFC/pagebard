@@ -72,13 +72,26 @@ offline (Piper, só CPU). Público: usuários comuns, que não usam terminal.
   extra no Flatpak.
 - Binário `tesseract` compilado como módulo do Flatpak: plano B.
 
+**Visualização do documento** (decidido depois do MVP, a pedido do dono:
+"não visualiza o PDF de verdade")
+
+- Visualizador próprio com páginas renderizadas pelo MuPDF via PyMuPDF
+  (escolhido): já é dependência; dá a posição de cada palavra, o que permite
+  destacar a frase lida na própria página, clicar para escolher onde começar
+  e arrastar para ler só um trecho.
+- QtPdf (`QPdfView`): pronto, mas sem seleção de texto no widget e sem ligação
+  entre o texto extraído e a posição na página.
+- pdf.js dentro do QtWebEngine: visual completo, porém +200 MB no pacote.
+- Caixa de texto com o texto extraído (MVP): descartada, não parece o PDF.
+
 ## Arquitetura
 
 ```
 src/leitorpdf/
 ├── core/        sem Qt, coberto por pytest
-│   ├── pdf.py        texto por página, detecção de PDF escaneado
-│   ├── segmenter.py  texto → frases com offsets (para o destaque)
+│   ├── pdf.py        texto e palavras (com posição) por página
+│   ├── segmenter.py  texto → frases com offsets
+│   ├── reading.py    texto do documento ↔ retângulos nas páginas
 │   ├── voices.py     catálogo voices.json, download, vozes instaladas
 │   ├── tts.py        wrapper do Piper → PCM 16-bit mono
 │   ├── export.py     PCM → MP3 via ffmpeg
@@ -88,11 +101,21 @@ src/leitorpdf/
 │   ├── synth_worker.py  thread: fila de frases → áudio, alguns blocos à frente
 │   └── player.py        QAudioSink, play/pause/parar, sinal "frase atual"
 └── ui/          janelas e diálogos; todo texto visível em pt-BR
+    ├── pdf_view.py       páginas reais, realces, seleção por palavra, zoom
+    └── page_renderer.py  renderização das páginas em thread própria
 ```
 
-Fluxo de leitura: `pdf` extrai texto → `segmenter` divide em frases →
-`synth_worker` sintetiza à frente em thread própria → `player` toca cada
-bloco e emite a frase atual → `ui` destaca.
+Fluxo de leitura: `pdf` extrai texto e palavras → `reading` divide em frases
+e sabe onde cada trecho fica na página → `synth_worker` sintetiza à frente em
+thread própria → `player` toca cada bloco e emite a frase atual → `pdf_view`
+destaca a frase na página e rola até ela.
+
+Escolha do que ler: clique numa palavra marca o ponto de início (durante a
+leitura, pula para lá); duplo clique começa a ler dali; arrastar seleciona um
+trecho, que é lido sozinho; o intervalo de páginas limita o resto.
+
+Áudio: a voz é mono, mas o dispositivo recebe dois canais iguais (um stream
+de um canal sai só no lado esquerdo no PipeWire).
 
 Dados do usuário (vozes, tessdata) em `$XDG_DATA_HOME/leitorpdf/`.
 Voz padrão: `pt_BR-faber-medium`, baixada no primeiro uso.
@@ -101,8 +124,9 @@ Voz padrão: `pt_BR-faber-medium`, baixada no primeiro uso.
 
 0. Projeto: git, venv, `pyproject.toml`.
 1. MVP: abrir PDF, escolher voz, play/pause.
-2. Parar, velocidade, destaque da frase, intervalo de páginas,
-   arrastar-e-soltar.
+2. Visualizador com as páginas reais; parar, velocidade, destaque da frase
+   na página, escolher onde começar, ler um trecho selecionado, intervalo de
+   páginas, zoom, arrastar-e-soltar; interface refeita.
 3. Gerenciador de vozes: catálogo por idioma, download com progresso, remover.
 4. Exportar MP3 (intervalo, progresso, cancelar).
 5. PDF escaneado: aviso + OCR opcional.
