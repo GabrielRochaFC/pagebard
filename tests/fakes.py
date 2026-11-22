@@ -45,3 +45,32 @@ class FakeAudioOut:
 
     def is_idle(self):
         return self.idle
+
+
+class FakeSynth:
+    """Stands in for core.tts.Synthesizer."""
+
+    sample_rate = 22050
+
+    def __init__(self, audio=b"\x00\x00" * 10, error=None):
+        self.audio = audio
+        self.error = error
+        self.spoken = []
+
+    def synthesize(self, text, length_scale=1.0):
+        if self.error is not None:
+            raise self.error
+        self.spoken.append(text)
+        return self.audio
+
+
+def wait_until(qapp, condition, timeout=3.0):
+    """Run the Qt event loop until `condition()` holds."""
+    import time
+
+    deadline = time.monotonic() + timeout
+    while not condition():
+        if time.monotonic() > deadline:
+            raise AssertionError("timed out waiting for the UI")
+        qapp.processEvents()
+        time.sleep(0.005)
