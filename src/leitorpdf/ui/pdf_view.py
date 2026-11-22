@@ -176,10 +176,14 @@ class PdfView(QAbstractScrollArea):
         top = min(box.top() for box in boxes)
         bottom = max(box.bottom() for box in boxes)
         height = self.viewport().height()
-        if top >= 8 and bottom <= height - 8:
-            return
-        bar = self.verticalScrollBar()
-        bar.setValue(bar.value() + top - height // 3)
+        if top < 8 or bottom > height - 8:
+            bar = self.verticalScrollBar()
+            bar.setValue(bar.value() + top - height // 3)
+        left = min(box.left() for box in boxes)
+        right = max(box.right() for box in boxes)
+        if left < 8 or right > self.viewport().width() - 8:  # zoomed in
+            bar = self.horizontalScrollBar()
+            bar.setValue(bar.value() + left - 24)
 
     # ---- highlights ------------------------------------------------------------
 

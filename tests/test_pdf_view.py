@@ -1,6 +1,7 @@
 import threading
 import time
 
+import pymupdf
 import pytest
 from fakes import wait_until
 from PySide6.QtCore import QPoint, Qt
@@ -401,3 +402,31 @@ def test_fast_scrolling_keeps_rendering_and_memory_bounded(make_view, make_pdf, 
     wait_until(qapp, lambda: view.current_page() - 1 in view.rendered_pages())
     assert most_pages_held <= 4
     assert len(view.rendered_pages()) <= 3
+
+
+def test_scroll_to_also_scrolls_sideways_when_zoomed_in(make_view, tmp_path, qapp):
+    path = tmp_path / "largo.pdf"
+    doc = pymupdf.open()
+    page = doc.new_page()
+    page.insert_text((72, 100), "esquerda", fontsize=12)
+    page.insert_text((470, 100), "direita", fontsize=12)
+    doc.save(path)
+    doc.close()
+    view = make_view()
+    view.set_document(path, build_reading(load_pdf(path)))
+    for _ in range(8):
+        view.zoom_in()  # 4x: the page is far wider than the window
+    assert view.horizontalScrollBar().maximum() > 0
+
+    def visible(index):
+        word = view.reading.words[index]
+        left = view.to_view(0, word.rect[0], word.rect[1])
+        right = view.to_view(0, word.rect[2], word.rect[3])
+        return view.viewport().rect().contains(left) and view.viewport().rect().contains(right)
+
+    right_word = view.reading.words[1]
+    view.scroll_to(right_word.start, right_word.end)
+    assert visible(1)
+    left_word = view.reading.words[0]
+    view.scroll_to(left_word.start, left_word.end)
+    assert visible(0)

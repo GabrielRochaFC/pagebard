@@ -812,7 +812,7 @@ def test_changing_the_range_stops_playback_and_clears_the_start_point(
 ):
     click_word(shown, 2)
     start_long_playback(qapp, shown, player, out, synth)
-    shown.last_page_spin.setValue(1)
+    shown.first_page_spin.setValue(2)  # leaves the start point outside
     assert player.state is PlayerState.STOPPED
     assert shown.pdf_view.start_marker() is None
     assert shown.play_button.text() == PLAY
@@ -966,3 +966,13 @@ def test_typing_a_page_number_applies_it_whole(window, qapp, make_pdf, player, o
     QTest.keyClick(spin, Qt.Key.Key_Return)
     assert page_range(window) == (10, 25)
     assert player.state is PlayerState.STOPPED
+
+
+def test_range_edit_keeps_a_start_point_that_is_still_inside(shown):
+    click_word(shown, 2)  # second sentence, on page 1
+    shown.last_page_spin.setValue(1)
+    assert shown.pdf_view.start_marker() == sentence_range(shown, 1)
+    assert shown.play_button.text() == READ_HERE
+    shown.first_page_spin.setValue(2)  # now page 1 is out (and last follows to 2)
+    assert shown.pdf_view.start_marker() is None
+    assert shown.play_button.text() == PLAY

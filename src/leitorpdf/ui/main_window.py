@@ -395,7 +395,11 @@ class MainWindow(QMainWindow):
 
     def _on_range_edited(self) -> None:
         self._player.stop()
-        self._clear_start_point()
+        chosen = self._start_sentence
+        if chosen is not None and self._reading is not None:
+            page = self._reading.sentence_page(chosen) + 1
+            if not self.first_page_spin.value() <= page <= self.last_page_spin.value():
+                self._clear_start_point()
 
     def _fit_width(self) -> None:
         self.pdf_view.fit_width()

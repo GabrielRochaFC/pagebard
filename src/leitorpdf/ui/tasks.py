@@ -29,11 +29,13 @@ class _Task(QRunnable):
 
     def run(self) -> None:
         try:
-            result = self._fn()
+            outcome = (True, self._fn())
         except Exception as exc:
-            self._bridge.finished.emit(self._task_id, False, exc)
-        else:
-            self._bridge.finished.emit(self._task_id, True, result)
+            outcome = (False, exc)
+        try:
+            self._bridge.finished.emit(self._task_id, *outcome)
+        except RuntimeError:
+            pass  # the program is closing and Qt is already gone: nobody to tell
 
 
 def run_async(
