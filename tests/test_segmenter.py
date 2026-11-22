@@ -86,3 +86,15 @@ def test_book_sized_text_splits_quickly():
     out = split_sentences(source)
     assert len(out) == 40000
     assert time.perf_counter() - began < 1.0
+
+
+def test_single_letter_abbreviation_before_a_number():
+    assert texts("Conforme (SILVA, 2010, p. 45). Fim.") == [
+        "Conforme (SILVA, 2010, p. 45).",
+        "Fim.",
+    ]
+    assert texts("A Lei n. 9.394 vale. Fim.") == ["A Lei n. 9.394 vale.", "Fim."]
+    assert texts("Ela sabe quem ele é. Depois saiu.") == [
+        "Ela sabe quem ele é.",
+        "Depois saiu.",
+    ]

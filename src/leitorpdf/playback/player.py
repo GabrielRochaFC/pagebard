@@ -1,5 +1,6 @@
 """Plays sentences one after another, synthesizing a few ahead."""
 
+import time
 from collections.abc import Callable, Sequence
 from enum import Enum
 
@@ -31,6 +32,7 @@ class Player(QObject):
         self._audio: AudioOut = audio_out if audio_out is not None else QtAudioOut()
         self._state = PlayerState.STOPPED
         self._worker: SynthWorker | None = None
+        self._retired: list[SynthWorker] = []  # stopped, possibly still finishing
         self._pending = b""  # audio of the sentence being sent to the device
         self._offset = 0
         self._heard_audio = False
@@ -76,14 +78,27 @@ class Player(QObject):
         if self._state is PlayerState.STOPPED:
             return
         self._timer.stop()
-        if self._worker is not None:
-            self._worker.stop()
-            self._worker = None
+        self._retire_worker()
         self._audio.stop()
         self._pending = b""
         self._offset = 0
         self._heard_audio = False
         self._set_state(PlayerState.STOPPED)
+
+    def shutdown(self, timeout: float = 3.0) -> None:
+        """Stop and wait for synthesis threads to end (before the app exits)."""
+        self.stop()
+        deadline = time.monotonic() + timeout
+        for worker in self._retired:
+            worker.join(max(0.0, deadline - time.monotonic()))
+        self._retired = [worker for worker in self._retired if worker.is_alive()]
+
+    def _retire_worker(self) -> None:
+        self._retired = [worker for worker in self._retired if worker.is_alive()]
+        if self._worker is not None:
+            self._worker.stop()
+            self._retired.append(self._worker)
+            self._worker = None
 
     def tick(self) -> None:
         """Move audio from the synthesis queue to the device. Never blocks."""

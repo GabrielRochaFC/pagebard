@@ -191,3 +191,53 @@ def test_already_installed_voice_is_not_downloaded_again(tmp_path):
         raise AssertionError("should not touch the network")
 
     assert download_voice(KEY, tmp_path, opener=opener) == Voice(KEY, tmp_path / f"{KEY}.onnx")
+
+
+def test_cancelled_attempt_that_wakes_up_late_does_not_touch_a_later_download(tmp_path):
+    base = make_remote(tmp_path)
+    dest = tmp_path / "voices"
+    reading_started = threading.Event()
+    release = threading.Event()
+
+    class StalledResponse(FakeResponse):
+        def read(self, size=-1):
+            reading_started.set()
+            release.wait(5.0)  # a dead connection: the read does not return
+            return super().read(size)
+
+    stalled = opener_with(lambda: StalledResponse([b"x" * 1000], length=5000))
+    cancel = threading.Event()
+    outcome = {}
+
+    def first_attempt():
+        try:
+            download_voice(KEY, dest, cancel=cancel, opener=stalled)
+        except BaseException as exc:
+            outcome["error"] = exc
+
+    thread = threading.Thread(target=first_attempt)
+    thread.start()
+    assert reading_started.wait(2.0)
+    cancel.set()  # the user gave up on it...
+    download_voice(KEY, dest, base_url=base)  # ...and tried again, successfully
+    release.set()  # only now does the first attempt notice it was cancelled
+    thread.join(2.0)
+
+    assert isinstance(outcome["error"], DownloadCancelled)
+    assert (dest / f"{KEY}.onnx").read_bytes() == ONNX
+    assert sorted(p.name for p in dest.iterdir()) == [f"{KEY}.onnx", f"{KEY}.onnx.json"]
+    assert [v.key for v in installed_voices(dest)] == [KEY]
+
+
+def test_unexpected_exception_is_cleaned_up_and_reported(tmp_path):
+    import http.client
+
+    class BrokenResponse(FakeResponse):
+        def read(self, size=-1):
+            raise http.client.IncompleteRead(b"")
+
+    dest = tmp_path / "voices"
+    opener = opener_with(lambda: BrokenResponse([], length=10))
+    with pytest.raises(VoiceDownloadError, match=re.escape(MSG_DOWNLOAD)):
+        download_voice(KEY, dest, opener=opener)
+    assert list(dest.iterdir()) == []

@@ -2,6 +2,7 @@
 
 import os
 import re
+import tempfile
 import threading
 import urllib.parse
 import urllib.request
@@ -107,30 +108,39 @@ def download_voice(
         return Voice(key=key, path=model)
 
     opener = opener or _open_url
+    # Each attempt writes to its own temporary files, so an older attempt that
+    # is still winding down can never damage a newer one.
+    temps: list[Path] = []
     try:
-        _fetch(config_url, config, None, cancel, opener)
+        config_part = _fetch(config_url, voices_dir, None, cancel, opener, temps)
+        model_part = _fetch(onnx_url, voices_dir, progress, cancel, opener, temps)
+        os.replace(config_part, config)
         # The model goes last: its presence is what marks a voice as installed.
-        _fetch(onnx_url, model, progress, cancel, opener)
+        os.replace(model_part, model)
     except DownloadCancelled:
-        _remove(model, config)
+        _discard(temps)
         raise
-    except OSError as exc:
-        _remove(model, config)
+    except Exception as exc:
+        _discard(temps)
         raise VoiceDownloadError(MSG_DOWNLOAD) from exc
     return Voice(key=key, path=model)
 
 
 def _fetch(
     url: str,
-    dest: Path,
+    folder: Path,
     progress: ProgressCallback | None,
     cancel: threading.Event | None,
     opener: Callable[[str], Any],
-) -> None:
-    part = _part_path(dest)
+    temps: list[Path],
+) -> Path:
+    """Download url into a new temporary file in folder and return its path."""
+    handle, name = tempfile.mkstemp(dir=folder, suffix=".part")
+    part = Path(name)
+    temps.append(part)
     done = 0
     reported = None
-    with opener(url) as response, open(part, "wb") as out:
+    with os.fdopen(handle, "wb") as out, opener(url) as response:
         total = _content_length(response)
         while True:
             if cancel is not None and cancel.is_set():
@@ -145,9 +155,9 @@ def _fetch(
                 progress(done, total)
     if done < total:
         raise OSError(f"download ended early: {done} of {total} bytes")
-    os.replace(part, dest)
     if progress is not None and reported != (done, done):
         progress(done, done)
+    return part
 
 
 def _open_url(url: str) -> Any:
@@ -166,15 +176,10 @@ def _config_path(model: Path) -> Path:
     return model.with_name(model.name + ".json")
 
 
-def _part_path(path: Path) -> Path:
-    return path.with_name(path.name + ".part")
-
-
 def _is_complete(path: Path) -> bool:
     return path.is_file() and path.stat().st_size > 0
 
 
-def _remove(*paths: Path) -> None:
+def _discard(paths: list[Path]) -> None:
     for path in paths:
-        for candidate in (path, _part_path(path)):
-            candidate.unlink(missing_ok=True)
+        path.unlink(missing_ok=True)

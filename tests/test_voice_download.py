@@ -1,3 +1,4 @@
+from fakes import wait_until
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication
 
@@ -46,5 +47,27 @@ def test_cancel_button_stops_the_download(qapp, tmp_path):
     QTimer.singleShot(50, lambda: QApplication.activeModalWidget().cancel())
     voice = download_default_voice(None, tmp_path, notify=notes.append, download=fake_download)
     assert voice is None
+    wait_until(qapp, lambda: seen)  # the dialog does not wait for the thread
     assert seen == {"cancel_requested": True}
+    assert notes == []
+
+
+def test_cancel_returns_promptly_even_if_the_download_is_stuck(qapp, tmp_path):
+    import threading
+    import time
+
+    notes = []
+    release = threading.Event()
+
+    def stuck_download(key, voices_dir, progress=None, cancel=None):
+        release.wait(1.5)  # like a socket waiting for data: deaf to the cancel request
+        raise DownloadCancelled()
+
+    QTimer.singleShot(50, lambda: QApplication.activeModalWidget().cancel())
+    began = time.monotonic()
+    voice = download_default_voice(None, tmp_path, notify=notes.append, download=stuck_download)
+    elapsed = time.monotonic() - began
+    release.set()
+    assert voice is None
+    assert elapsed < 0.5
     assert notes == []

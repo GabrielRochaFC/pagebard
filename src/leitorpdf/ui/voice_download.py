@@ -85,9 +85,10 @@ def download_default_voice(
     thread.start()
     dialog.exec()
     # Closing the dialog any other way (Esc, window button) also cancels.
+    # The thread is not waited for: a dead connection can hold it for a while,
+    # and it cleans up after itself when it finally notices.
     if "voice" not in outcome and "error" not in outcome:
         cancel.set()
-    thread.join(timeout=1.0)
 
     if "error" in outcome:
         (notify or (lambda text: show_error(parent, text)))(user_message(outcome["error"]))

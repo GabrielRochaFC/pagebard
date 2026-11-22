@@ -60,6 +60,8 @@ def _is_sentence_boundary(text: str, match: re.Match, start: int, end: int) -> b
             return False
         if len(word) == 1 and word.isupper():
             return False  # an initial, as in "J. K. Rowling"
+        if len(word) == 1 and word.isalpha() and nxt.isdigit():
+            return False  # "p. 45", "n. 9.394"
     return True
 
 

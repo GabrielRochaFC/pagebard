@@ -250,3 +250,15 @@ def test_rapid_toggle(player, out, rec):
     assert bytes(out.written) == b"aaaaaaaa" + b"bbbbbbbb" + b"cccccccc"
     assert out.writes_while_suspended == 0
     assert rec.finished == 1
+
+
+def test_shutdown_waits_for_synthesis_in_flight(player, out):
+    def slow(text):
+        time.sleep(0.3)
+        return b"zz"
+
+    player.play(slow, RATE, ["a", "b", "c"])
+    time.sleep(0.05)  # the worker is now inside the first synthesis
+    player.shutdown()
+    assert synth_threads() == []
+    assert player.state is PlayerState.STOPPED
