@@ -72,3 +72,78 @@ def test_password_protected(tmp_path):
     doc.close()
     with pytest.raises(PdfError, match=re.escape(MSG_PASSWORD)):
         load_pdf(path)
+
+
+def page_words(doc, page=0):
+    return [doc.pages[page][w.start : w.end] for w in doc.words[page]]
+
+
+def test_words_map_to_page_text(make_pdf):
+    doc = load_pdf(make_pdf(["Olá mundo cruel."]))
+    assert page_words(doc) == ["Olá", "mundo", "cruel."]
+    assert all(w.rect[0] < w.rect[2] and w.rect[1] < w.rect[3] for w in doc.words[0])
+    assert doc.words[0][0].rect[0] < doc.words[0][1].rect[0] < doc.words[0][2].rect[0]
+    assert len({w.line for w in doc.words[0]}) == 1
+
+
+def test_page_sizes(make_pdf):
+    assert load_pdf(make_pdf(["a", ""])).page_sizes == ((595.0, 842.0), (595.0, 842.0))
+
+
+def test_blank_page_has_no_words(make_pdf):
+    assert load_pdf(make_pdf([""])).words == ((),)
+
+
+def test_lines_get_increasing_ids(make_pdf):
+    doc = load_pdf(make_pdf(["Primeira linha\nsegunda linha"]))
+    lines = [w.line for w in doc.words[0]]
+    assert lines == sorted(lines)
+    assert len(set(lines)) == 2
+
+
+def test_hyphenated_word_keeps_both_rectangles(make_pdf):
+    doc = load_pdf(make_pdf(["Este é um exem-\nplo simples."]))
+    assert doc.pages[0] == "Este é um exemplo simples."
+    assert page_words(doc) == ["Este", "é", "um", "exem", "plo", "simples."]
+    exem, plo = doc.words[0][3], doc.words[0][4]
+    assert exem.end == plo.start
+    assert exem.line != plo.line
+
+
+def test_numeric_range_broken_across_lines_keeps_its_hyphen(make_pdf):
+    doc = load_pdf(make_pdf(["De 1990-\n1995 foi assim."]))
+    assert doc.pages[0] == "De 1990-1995 foi assim."
+
+
+def test_hyphen_before_a_capital_is_kept(make_pdf):
+    doc = load_pdf(make_pdf(["Ele mora no Rio-\nGrande agora."]))
+    assert doc.pages[0] == "Ele mora no Rio-Grande agora."
+
+
+def test_two_columns_are_read_column_by_column(tmp_path):
+    path = tmp_path / "colunas.pdf"
+    doc = pymupdf.open()
+    page = doc.new_page()
+    for row, word in enumerate(["L1", "L2", "L3"]):
+        page.insert_text((72, 100 + 20 * row), word, fontsize=12)
+    for row, word in enumerate(["R1", "R2", "R3"]):
+        page.insert_text((320, 100 + 20 * row), word, fontsize=12)
+    doc.save(path)
+    doc.close()
+    assert load_pdf(path).pages[0].split() == ["L1", "L2", "L3", "R1", "R2", "R3"]
+
+
+def test_rotated_page_words_match_what_is_displayed(tmp_path):
+    path = tmp_path / "girado.pdf"
+    doc = pymupdf.open()
+    page = doc.new_page()
+    page.insert_text((72, 100), "um dois tres", fontsize=12)
+    page.set_rotation(90)
+    doc.save(path)
+    doc.close()
+    loaded = load_pdf(path)
+    assert loaded.page_sizes == ((842.0, 595.0),)
+    rects = [w.rect for w in loaded.words[0]]
+    # On screen the line now runs top to bottom, near the right edge.
+    assert rects[0][1] < rects[1][1] < rects[2][1]
+    assert all(700 < r[0] < r[2] < 842 for r in rects)
