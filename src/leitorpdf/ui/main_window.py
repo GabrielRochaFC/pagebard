@@ -6,6 +6,7 @@ from typing import Any
 
 from PySide6.QtCore import QStandardPaths, Qt, QTimer
 from PySide6.QtGui import (
+    QAction,
     QCloseEvent,
     QDragEnterEvent,
     QDropEvent,
@@ -28,10 +29,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from leitorpdf.core import paths
+from leitorpdf.core import ocr, paths
 from leitorpdf.core.errors import LeitorError, user_message
 from leitorpdf.core.export import ExportCancelled, export_mp3
-from leitorpdf.core.pdf import PdfText, load_pdf
+from leitorpdf.core.pdf import PdfText, load_pdf, with_ocr
 from leitorpdf.core.reading import Reading, build_reading
 from leitorpdf.core.segmenter import Sentence
 from leitorpdf.core.tts import Synthesizer
@@ -42,6 +43,7 @@ from leitorpdf.ui.messages import (
     MSG_EMPTY_RANGE,
     MSG_NEED_VOICE,
     MSG_NO_TEXT,
+    offer_ocr_text,
     show_error,
 )
 from leitorpdf.ui.pdf_view import PdfView
@@ -113,9 +115,16 @@ class MainWindow(QMainWindow):
         offer_download: bool = True,
         voice_manager: Callable[[QWidget], Any] | None = None,
         exporter: Callable[..., None] = export_mp3,
+        tessdata_dir: Path | None = None,
+        recognizer: Callable[..., dict] = ocr.recognize,
+        ocr_downloader: Callable[..., None] = ocr.download_language,
     ) -> None:
         super().__init__()
         self._exporter = exporter
+        self._tessdata_dir = tessdata_dir if tessdata_dir is not None else paths.tessdata_dir()
+        self._recognizer = recognizer
+        self._ocr_downloader = ocr_downloader
+        self._doc: PdfText | None = None
         self._doc_path: Path | None = None
         self._player = player if player is not None else Player(parent=self)
         self._voices_dir = voices_dir if voices_dir is not None else paths.voices_dir()
@@ -193,6 +202,11 @@ class MainWindow(QMainWindow):
         self.export_button.setToolTip("Gravar a leitura das páginas escolhidas num arquivo MP3")
         self.export_button.setEnabled(False)
         self.export_button.clicked.connect(self._export)
+
+        self.ocr_action = QAction("Reconhecer texto (OCR)…", self)
+        self.ocr_action.setEnabled(False)
+        self.ocr_action.triggered.connect(self._run_ocr)
+        self.addAction(self.ocr_action)
 
         voice_label = QLabel("Voz:")
         self.voice_combo = QComboBox()
@@ -353,16 +367,32 @@ class MainWindow(QMainWindow):
     def _on_loaded(self, load_id: int, doc: PdfText, reading: Reading) -> None:
         if load_id != self._load_id:
             return
+        self._show_document(doc, reading, fresh=True)
+        if doc.scanned_pages:
+            if self._ask(offer_ocr_text(len(doc.scanned_pages), reading.page_count)):
+                self._run_ocr()
+        elif not reading.sentences:
+            self._notify(MSG_NO_TEXT)
+
+    def _show_document(self, doc: PdfText, reading: Reading, fresh: bool) -> None:
+        """Put a document on screen; `fresh` is False when only its text changed."""
         self._player.stop()
+        self._doc = doc
+        self._doc_path = doc.path
         self._reading = reading
         self._playing = []
         self._start_sentence = None
-        self.pdf_view.set_document(doc.path, reading)
-        self._doc_path = doc.path
-        self._reset_page_range()
+        if fresh:
+            self.pdf_view.set_document(doc.path, reading)
+            self._reset_page_range()
+        else:
+            self.pdf_view.update_reading(reading)
+            for spin in (self.first_page_spin, self.last_page_spin):
+                spin.setEnabled(bool(reading.sentences))
         self._update_zoom_controls()
         self.play_button.setEnabled(bool(reading.sentences))
         self.export_button.setEnabled(bool(reading.sentences))
+        self.ocr_action.setEnabled(bool(doc.scanned_pages))
         count = reading.page_count
         self._doc_status = f"{doc.path.name} — {count} página{'' if count == 1 else 's'}"
         if reading.sentences:
@@ -370,8 +400,60 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(self._doc_status)
         self._update_page_label()
         self._show_state(self._player.state)
-        if not reading.sentences:
+
+    def _ask(self, text: str) -> bool:
+        yes = QMessageBox.StandardButton.Yes
+        answer = QMessageBox.question(
+            self, APP_NAME, text, yes | QMessageBox.StandardButton.No, yes
+        )
+        return answer == yes
+
+    # ---- text recognition (OCR) ------------------------------------------------
+
+    def _run_ocr(self) -> None:
+        """Recognize the text of the scanned pages of the open document."""
+        doc = self._doc
+        if doc is None or not doc.scanned_pages:
+            return
+        self._player.stop()
+        voice = self.voice_combo.currentData()
+        language = ocr.language_for(voice.language if voice is not None else "pt_BR")
+        # Everything the worker threads touch is plain: no widgets, no self.
+        tessdata, pages, path = self._tessdata_dir, list(doc.scanned_pages), doc.path
+        downloader, recognizer = self._ocr_downloader, self._recognizer
+        cancelled = (ocr.OcrCancelled,)
+
+        if not ocr.has_language(language, tessdata):
+
+            def fetch(report, cancel):
+                downloader(language, tessdata, progress=report, cancel=cancel)
+
+            status, _ = run_with_progress(
+                self, "Baixando dados de reconhecimento…", fetch, self._notify, cancelled
+            )
+            if status != "done":
+                return
+
+        def work(report, cancel):
+            def progress(done: int, total: int) -> None:
+                report(done, total, f"Reconhecendo texto… página {done} de {total}")
+
+            return recognizer(path, pages, language, tessdata, progress=progress, cancel=cancel)
+
+        status, recognized = run_with_progress(
+            self, "Reconhecendo texto…", work, self._notify, cancelled
+        )
+        if status != "done":
+            return
+        updated = with_ocr(doc, recognized)
+        found = len(doc.scanned_pages) - len(updated.scanned_pages)
+        if found == 0:
             self._notify(MSG_NO_TEXT)
+            return
+        self._show_document(updated, build_reading(updated), fresh=False)
+        self.statusBar().showMessage(
+            f"Texto reconhecido em {found} página{'' if found == 1 else 's'}."
+        )
 
     def _on_load_failed(self, load_id: int, exc: Exception) -> None:
         if load_id != self._load_id:

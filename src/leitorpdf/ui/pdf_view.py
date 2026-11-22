@@ -108,6 +108,20 @@ class PdfView(QAbstractScrollArea):
             self.selection_changed.emit(-1, -1)
         self.viewport().update()
 
+    def update_reading(self, reading: Reading) -> None:
+        """New text for the document already on screen (after OCR).
+
+        Scroll position, zoom and page images stay; marks tied to the old text go.
+        """
+        had_selection = self._selection is not None
+        self._reading = reading
+        self._highlight = self._marker = self._selection = None
+        self._overlay_rects.clear()
+        self._pressed = self._dragging = False
+        if had_selection:
+            self.selection_changed.emit(-1, -1)
+        self.viewport().update()
+
     def shutdown(self) -> None:
         """Stop the render thread. Call before the application exits."""
         self._poll_timer.stop()

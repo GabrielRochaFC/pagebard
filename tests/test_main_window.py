@@ -1208,3 +1208,234 @@ def test_export_without_voice_offers_download(
     window.export_button.click()
     assert asked == [MSG_NEED_VOICE]
     assert exporter.calls == []
+
+
+# ---- OCR ----------------------------------------------------------------------------
+
+from leitorpdf.core import ocr  # noqa: E402
+
+RECOGNIZED_WORDS = [
+    [72.0, 80.0, 100.0, 96.0, "Olá", 0, 0, 0],
+    [104.0, 80.0, 160.0, 96.0, "mundo.", 0, 0, 1],
+]
+
+
+class FakeRecognizer:
+    def __init__(self, words=RECOGNIZED_WORDS, error=None, wait_for_cancel=False):
+        self.calls = []
+        self.words = words
+        self.error = error
+        self.wait_for_cancel = wait_for_cancel
+
+    def __call__(self, path, pages, language, tessdata, progress=None, cancel=None):
+        self.calls.append(dict(path=path, pages=list(pages), language=language, tessdata=tessdata))
+        if self.wait_for_cancel:
+            cancel.wait(3.0)
+            raise ocr.OcrCancelled()
+        if self.error is not None:
+            raise self.error
+        for index in range(len(pages)):
+            progress(index + 1, len(pages))
+        return {page: [list(word) for word in self.words] for page in pages}
+
+
+class FakeOcrDownloader:
+    def __init__(self, error=None):
+        self.calls = []
+        self.error = error
+
+    def __call__(self, language, tessdata, progress=None, cancel=None):
+        self.calls.append((language, tessdata))
+        if self.error is not None:
+            raise self.error
+        tessdata.mkdir(parents=True, exist_ok=True)
+        (tessdata / f"{language}.traineddata").write_bytes(b"dados")
+
+
+@pytest.fixture
+def ocr_data(tmp_path):
+    folder = tmp_path / "tessdata"
+    folder.mkdir()
+    (folder / "por.traineddata").write_bytes(b"dados")
+    return folder
+
+
+@pytest.fixture
+def questions(monkeypatch):
+    """Answers "yes" to every question box and records what was asked."""
+    asked = {"texts": [], "answer": QMessageBox.StandardButton.Yes}
+
+    def question(parent, title, text, *args, **kwargs):
+        asked["texts"].append(text)
+        return asked["answer"]
+
+    monkeypatch.setattr(QMessageBox, "question", question)
+    return asked
+
+
+def open_scan(qapp, window, path):
+    window.open_path(path)
+    wait_until(qapp, lambda: window.reading is not None and window.reading.page_count > 0)
+
+
+def test_offers_ocr_for_a_scanned_pdf(make_window, qapp, make_scanned_pdf, questions, notes, ocr_data):
+    questions["answer"] = QMessageBox.StandardButton.No
+    recognizer = FakeRecognizer()
+    window = make_window(recognizer=recognizer, tessdata_dir=ocr_data)
+    open_scan(qapp, window, make_scanned_pdf(["Página um.", "Página dois."]))
+    wait_until(qapp, lambda: questions["texts"])
+    assert questions["texts"] == [
+        "Este PDF não tem texto (parece escaneado). Reconhecer o texto agora? "
+        "Pode levar alguns minutos."
+    ]
+    assert notes == []  # the offer replaces the "no text" notice
+    assert recognizer.calls == []  # declined
+    assert not window.play_button.isEnabled()
+    assert window.ocr_action.isEnabled()
+
+
+def test_ocr_makes_the_document_readable(
+    make_window, qapp, make_scanned_pdf, questions, ocr_data, synth
+):
+    recognizer = FakeRecognizer()
+    downloader = FakeOcrDownloader()
+    window = make_window(recognizer=recognizer, ocr_downloader=downloader, tessdata_dir=ocr_data)
+    path = make_scanned_pdf(["Página um.", "Página dois."])
+    open_scan(qapp, window, path)
+    wait_until(qapp, lambda: window.play_button.isEnabled())
+    assert recognizer.calls == [dict(path=path, pages=[0, 1], language="por", tessdata=ocr_data)]
+    assert downloader.calls == []  # the language data was already there
+    assert window.reading.text == "Olá mundo.\n\nOlá mundo."
+    assert window.pdf_view.reading is window.reading
+    assert window.export_button.isEnabled()
+    assert not window.ocr_action.isEnabled()
+    assert status(window) == "Texto reconhecido em 2 páginas."
+    assert page_range(window) == (1, 2) and window.first_page_spin.isEnabled()
+    read_to_the_end(qapp, window)
+    assert synth.spoken == ["Olá mundo.", "Olá mundo."]
+
+
+def test_ocr_downloads_the_language_data_first(
+    make_window, qapp, make_scanned_pdf, questions, tmp_path
+):
+    recognizer, downloader = FakeRecognizer(), FakeOcrDownloader()
+    empty = tmp_path / "tessdata-vazio"
+    window = make_window(recognizer=recognizer, ocr_downloader=downloader, tessdata_dir=empty)
+    open_scan(qapp, window, make_scanned_pdf(["Página um."]))
+    wait_until(qapp, lambda: window.play_button.isEnabled())
+    assert downloader.calls == [("por", empty)]
+    assert len(recognizer.calls) == 1
+    assert status(window) == "Texto reconhecido em 1 página."
+
+
+def test_failed_language_download_stops_there(
+    make_window, qapp, make_scanned_pdf, questions, tmp_path, notes
+):
+    recognizer = FakeRecognizer()
+    downloader = FakeOcrDownloader(error=ocr.OcrError(ocr.MSG_OCR_DATA))
+    window = make_window(
+        recognizer=recognizer, ocr_downloader=downloader, tessdata_dir=tmp_path / "vazio"
+    )
+    open_scan(qapp, window, make_scanned_pdf(["Página um."]))
+    wait_until(qapp, lambda: notes)
+    assert notes == [ocr.MSG_OCR_DATA]
+    assert recognizer.calls == []
+    assert not window.play_button.isEnabled()
+
+
+def test_ocr_cancel_keeps_the_document(make_window, qapp, make_scanned_pdf, questions, ocr_data, notes):
+    recognizer = FakeRecognizer(wait_for_cancel=True)
+    window = make_window(recognizer=recognizer, tessdata_dir=ocr_data)
+    QTimer.singleShot(400, lambda: QApplication.activeModalWidget().cancel())
+    open_scan(qapp, window, make_scanned_pdf(["Página um."]))
+    wait_until(qapp, lambda: recognizer.calls)
+    wait_until(qapp, lambda: QApplication.activeModalWidget() is None)
+    assert window.reading.sentences == ()
+    assert not window.play_button.isEnabled()
+    assert window.ocr_action.isEnabled()
+    assert notes == []
+
+
+def test_ocr_error_is_shown(make_window, qapp, make_scanned_pdf, questions, ocr_data, notes):
+    window = make_window(
+        recognizer=FakeRecognizer(error=ocr.OcrError(ocr.MSG_OCR)), tessdata_dir=ocr_data
+    )
+    open_scan(qapp, window, make_scanned_pdf(["Página um."]))
+    wait_until(qapp, lambda: notes)
+    assert notes == [ocr.MSG_OCR]
+    assert not window.play_button.isEnabled()
+
+
+def test_nothing_recognized_says_so(make_window, qapp, make_scanned_pdf, questions, ocr_data, notes):
+    window = make_window(recognizer=FakeRecognizer(words=[]), tessdata_dir=ocr_data)
+    open_scan(qapp, window, make_scanned_pdf(["Página um."]))
+    wait_until(qapp, lambda: notes)
+    assert notes == [MSG_NO_TEXT]
+    assert not window.play_button.isEnabled()
+    assert window.ocr_action.isEnabled()
+
+
+def test_ocr_action_runs_recognition_later(make_window, qapp, make_scanned_pdf, questions, ocr_data):
+    questions["answer"] = QMessageBox.StandardButton.No
+    recognizer = FakeRecognizer()
+    window = make_window(recognizer=recognizer, tessdata_dir=ocr_data)
+    assert not window.ocr_action.isEnabled()  # nothing open
+    open_scan(qapp, window, make_scanned_pdf(["Página um.", "Página dois."]))
+    wait_until(qapp, lambda: questions["texts"])
+    window.pdf_view.go_to_page(2)
+    window.ocr_action.trigger()
+    assert len(questions["texts"]) == 1  # asked only when opening
+    assert window.play_button.isEnabled()
+    assert window.pdf_view.current_page() == 2  # the view stayed where it was
+
+
+def test_ocr_action_is_off_for_documents_with_text(make_window, qapp, make_pdf):
+    window = make_window()
+    open_and_wait(qapp, window, make_pdf(["Texto normal."]))
+    assert not window.ocr_action.isEnabled()
+
+
+def test_ocr_language_follows_the_voice(
+    make_window, qapp, make_scanned_pdf, questions, tmp_path, voices_dir
+):
+    (voices_dir / "pt_BR-fake-medium.onnx").unlink()
+    add_voice(voices_dir, "en_US-amy-low")
+    recognizer, downloader = FakeRecognizer(), FakeOcrDownloader()
+    window = make_window(
+        recognizer=recognizer, ocr_downloader=downloader, tessdata_dir=tmp_path / "tess"
+    )
+    open_scan(qapp, window, make_scanned_pdf(["Page one."]))
+    wait_until(qapp, lambda: recognizer.calls)
+    assert downloader.calls == [("eng", tmp_path / "tess")]
+    assert recognizer.calls[0]["language"] == "eng"
+
+
+def test_mixed_document_keeps_its_text_and_gains_the_scanned_pages(
+    make_window, qapp, make_scanned_pdf, questions, ocr_data, tmp_path
+):
+    import pymupdf
+
+    mixed = pymupdf.open(make_scanned_pdf(["Página escaneada."]))
+    mixed.new_page().insert_text((72, 72), "Página com texto de verdade.")
+    path = tmp_path / "misto.pdf"
+    mixed.save(path)
+    recognizer = FakeRecognizer()
+    window = make_window(recognizer=recognizer, tessdata_dir=ocr_data)
+    window.open_path(path)
+    wait_until(qapp, lambda: recognizer.calls)
+    assert questions["texts"] == [
+        "1 de 2 páginas deste PDF não têm texto (parecem escaneadas). Reconhecer o "
+        "texto delas agora? Pode levar alguns minutos."
+    ]
+    assert recognizer.calls[0]["pages"] == [0]
+    wait_until(qapp, lambda: "Olá" in window.reading.text)
+    assert window.reading.text == "Olá mundo.\n\nPágina com texto de verdade."
+
+
+def test_blank_pdf_still_gets_the_no_text_notice(make_window, qapp, make_pdf, questions, notes):
+    window = make_window(recognizer=FakeRecognizer())
+    window.open_path(make_pdf(["", ""]))
+    wait_until(qapp, lambda: notes)
+    assert notes == [MSG_NO_TEXT]
+    assert questions["texts"] == []
+    assert not window.ocr_action.isEnabled()

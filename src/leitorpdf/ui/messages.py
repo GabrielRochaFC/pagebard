@@ -15,5 +15,18 @@ MSG_NEED_VOICE = (
 MSG_EMPTY_RANGE = "Não há texto para ler nas páginas escolhidas."
 
 
+def offer_ocr_text(scanned: int, total: int) -> str:
+    """The question asked when a PDF has pages that are only pictures."""
+    if scanned == total:
+        return (
+            "Este PDF não tem texto (parece escaneado). Reconhecer o texto agora? "
+            "Pode levar alguns minutos."
+        )
+    return (
+        f"{scanned} de {total} páginas deste PDF não têm texto (parecem escaneadas). "
+        "Reconhecer o texto delas agora? Pode levar alguns minutos."
+    )
+
+
 def show_error(parent: QWidget | None, text: str) -> None:
     QMessageBox.warning(parent, APP_NAME, text)
