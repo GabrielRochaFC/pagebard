@@ -5,7 +5,14 @@ from pathlib import Path
 from typing import Any
 
 from PySide6.QtCore import QStandardPaths, Qt, QTimer
-from PySide6.QtGui import QCloseEvent, QGuiApplication, QKeySequence, QShortcut
+from PySide6.QtGui import (
+    QCloseEvent,
+    QDragEnterEvent,
+    QDropEvent,
+    QGuiApplication,
+    QKeySequence,
+    QShortcut,
+)
 from PySide6.QtWidgets import (
     QComboBox,
     QFileDialog,
@@ -16,6 +23,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QSlider,
+    QSpinBox,
     QVBoxLayout,
     QWidget,
 )
@@ -28,7 +36,13 @@ from leitorpdf.core.segmenter import Sentence
 from leitorpdf.core.tts import Synthesizer
 from leitorpdf.core.voices import DEFAULT_VOICE_KEY, Voice, installed_voices
 from leitorpdf.playback.player import Player, PlayerState
-from leitorpdf.ui.messages import APP_NAME, MSG_NEED_VOICE, MSG_NO_TEXT, show_error
+from leitorpdf.ui.messages import (
+    APP_NAME,
+    MSG_EMPTY_RANGE,
+    MSG_NEED_VOICE,
+    MSG_NO_TEXT,
+    show_error,
+)
 from leitorpdf.ui.pdf_view import PdfView
 from leitorpdf.ui.tasks import run_async
 from leitorpdf.ui.voice_download import download_default_voice
@@ -36,6 +50,7 @@ from leitorpdf.ui.voice_download import download_default_voice
 _HINT = "clique no texto para escolher onde começar; arraste para ler só um trecho"
 _SPEED_MIN, _SPEED_MAX, _SPEED_DEFAULT = 5, 20, 10  # tenths: 0,5× to 2,0×
 _SPEED_SETTLE_MS = 250  # wait for the slider to stop before re-synthesizing
+_POINTS_PER_PIXEL_AT_100 = 96 / 72  # zoom shown as 100% means 96 dpi
 _PLAY_TEXT = {
     PlayerState.LOADING: "⏸ Pausar",
     PlayerState.PLAYING: "⏸ Pausar",
@@ -105,6 +120,7 @@ class MainWindow(QMainWindow):
         self._playing: list[Sentence] = []  # what the player is reading now
         self._start_sentence: int | None = None  # where "play" begins, if chosen
         self._length_scale = 1.0
+        self._adjusting_range = False  # page spins being set by the program
         self._doc_status = ""
         self._reading_status = ""
         self._load_id = 0  # lets a newer "open" supersede one still loading
@@ -123,7 +139,11 @@ class MainWindow(QMainWindow):
         self.pdf_view.background_clicked.connect(self._clear_start_point)
         self.pdf_view.selection_changed.connect(self._on_selection_changed)
         self.pdf_view.context_requested.connect(self._on_context_requested)
+        self.pdf_view.zoom_changed.connect(self._update_zoom_controls)
         self._reload_voices()
+        self._reset_page_range()
+        self._update_zoom_controls()
+        self.setAcceptDrops(True)
         self._show_state(self._player.state)
 
         if offer_download and self.voice_combo.count() == 0:
@@ -197,8 +217,42 @@ class MainWindow(QMainWindow):
         self._row2.addWidget(speed_title)
         self._row2.addWidget(self.speed_slider)
         self._row2.addWidget(self.speed_label)
-        self._row2.addStretch(1)
         self._on_speed_changed(self.speed_slider.value())
+
+        pages_title = QLabel("Páginas:")
+        self.first_page_spin = QSpinBox()
+        self.first_page_spin.setAccessibleName("Primeira página a ler")
+        self.first_page_spin.setToolTip("Primeira página a ler")
+        self.last_page_spin = QSpinBox()
+        self.last_page_spin.setAccessibleName("Última página a ler")
+        self.last_page_spin.setToolTip("Última página a ler")
+        for spin in (self.first_page_spin, self.last_page_spin):
+            spin.setMinimumWidth(64)
+        self.first_page_spin.valueChanged.connect(self._on_first_page_changed)
+        self.last_page_spin.valueChanged.connect(self._on_last_page_changed)
+        pages_title.setBuddy(self.first_page_spin)
+        self._row2.addSpacing(16)
+        self._row2.addWidget(pages_title)
+        self._row2.addWidget(self.first_page_spin)
+        self._row2.addWidget(QLabel("a"))
+        self._row2.addWidget(self.last_page_spin)
+        self._row2.addStretch(1)
+
+        self.zoom_out_button = QPushButton("−")
+        self.zoom_out_button.setToolTip("Diminuir a página (Ctrl+-)")
+        self.zoom_out_button.setAccessibleName("Diminuir a página")
+        self.zoom_in_button = QPushButton("+")
+        self.zoom_in_button.setToolTip("Aumentar a página (Ctrl++)")
+        self.zoom_in_button.setAccessibleName("Aumentar a página")
+        self.zoom_label = QLabel()
+        self.zoom_label.setMinimumWidth(44)
+        self.zoom_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.fit_button = QPushButton("Ajustar à largura")
+        self.fit_button.setToolTip("Ajustar a página à largura da janela (Ctrl+0)")
+        self._row2.addWidget(self.zoom_out_button)
+        self._row2.addWidget(self.zoom_label)
+        self._row2.addWidget(self.zoom_in_button)
+        self._row2.addWidget(self.fit_button)
 
         header = QWidget()
         header.setObjectName("header")
@@ -209,6 +263,9 @@ class MainWindow(QMainWindow):
         header_layout.addLayout(self._row2)
 
         self.pdf_view = PdfView()
+        self.zoom_out_button.clicked.connect(self.pdf_view.zoom_out)
+        self.zoom_in_button.clicked.connect(self.pdf_view.zoom_in)
+        self.fit_button.clicked.connect(self._fit_width)
 
         central = QWidget()
         layout = QVBoxLayout(central)
@@ -234,6 +291,13 @@ class MainWindow(QMainWindow):
             shortcut.activated.connect(lambda step=step: self._nudge_speed(step))
         copy = QShortcut(QKeySequence(QKeySequence.StandardKey.Copy), self)
         copy.activated.connect(self._copy_selection)
+        for keys, action in (
+            ("Ctrl++", self.pdf_view.zoom_in),
+            ("Ctrl+=", self.pdf_view.zoom_in),
+            ("Ctrl+-", self.pdf_view.zoom_out),
+            ("Ctrl+0", self._fit_width),
+        ):
+            QShortcut(QKeySequence(keys), self).activated.connect(action)
 
     # ---- opening a document ------------------------------------------------
 
@@ -269,6 +333,8 @@ class MainWindow(QMainWindow):
         self._playing = []
         self._start_sentence = None
         self.pdf_view.set_document(doc.path, reading)
+        self._reset_page_range()
+        self._update_zoom_controls()
         self.play_button.setEnabled(bool(reading.sentences))
         count = reading.page_count
         self._doc_status = f"{doc.path.name} — {count} página{'' if count == 1 else 's'}"
@@ -292,6 +358,65 @@ class MainWindow(QMainWindow):
             self.page_label.setText("")
         else:
             self.page_label.setText(f"Página {page} de {self._reading.page_count}")
+
+    # ---- page range, zoom, drag and drop ---------------------------------------
+
+    def _reset_page_range(self) -> None:
+        count = self._reading.page_count if self._reading is not None else 1
+        readable = self._reading is not None and bool(self._reading.sentences)
+        self._adjusting_range = True
+        for spin, value in ((self.first_page_spin, 1), (self.last_page_spin, count)):
+            spin.setRange(1, count)
+            spin.setValue(value)
+            spin.setEnabled(readable)
+        self._adjusting_range = False
+
+    def _set_page_range(self, first: int, last: int) -> None:
+        """Change the spins without it counting as the user editing them."""
+        self._adjusting_range = True
+        self.first_page_spin.setValue(first)
+        self.last_page_spin.setValue(last)
+        self._adjusting_range = False
+
+    def _on_first_page_changed(self, value: int) -> None:
+        if self._adjusting_range:
+            return
+        self._set_page_range(value, max(value, self.last_page_spin.value()))
+        self._on_range_edited()
+
+    def _on_last_page_changed(self, value: int) -> None:
+        if self._adjusting_range:
+            return
+        self._set_page_range(min(value, self.first_page_spin.value()), value)
+        self._on_range_edited()
+
+    def _on_range_edited(self) -> None:
+        self._player.stop()
+        self._clear_start_point()
+
+    def _fit_width(self) -> None:
+        self.pdf_view.fit_width()
+        self._update_zoom_controls()
+
+    def _update_zoom_controls(self, _zoom: float = 0.0) -> None:
+        has_document = self._reading is not None
+        for button in (self.zoom_out_button, self.zoom_in_button, self.fit_button):
+            button.setEnabled(has_document)
+        if has_document:
+            percent = round(self.pdf_view.zoom() / _POINTS_PER_PIXEL_AT_100 * 100)
+            self.zoom_label.setText(f"{percent}%")
+        else:
+            self.zoom_label.setText("")
+
+    def dragEnterEvent(self, event: QDragEnterEvent) -> None:
+        if _first_local_file(event) is not None:
+            event.acceptProposedAction()
+
+    def dropEvent(self, event: QDropEvent) -> None:
+        path = _first_local_file(event)
+        if path is not None:
+            event.acceptProposedAction()
+            self.open_path(path)
 
     # ---- voices --------------------------------------------------------------
 
@@ -355,7 +480,12 @@ class MainWindow(QMainWindow):
         selection = self.pdf_view.selection()
         if selection is not None:
             return self._reading.sentences_between(*selection), 0
-        return list(self._reading.sentences), self._start_sentence or 0
+        first, last = self._reading.slice_for_pages(
+            self.first_page_spin.value(), self.last_page_spin.value()
+        )
+        chosen = self._start_sentence
+        start = chosen - first if chosen is not None and first <= chosen < last else 0
+        return list(self._reading.sentences[first:last]), start
 
     # ---- choosing what to read -------------------------------------------------
 
@@ -367,6 +497,11 @@ class MainWindow(QMainWindow):
         if index is None:
             return False
         self._start_sentence = index
+        page = self._reading.sentence_page(index) + 1
+        if not self.first_page_spin.value() <= page <= self.last_page_spin.value():
+            # The chosen place wins: stretch the page range to include it.
+            last = self.last_page_spin.value()
+            self._set_page_range(page, last if last >= page else self._reading.page_count)
         sentence = self._reading.sentences[index]
         self.pdf_view.set_start_marker(sentence.start, sentence.end)
         self._show_state(self._player.state)
@@ -437,6 +572,7 @@ class MainWindow(QMainWindow):
             return
         sentences, start = self._reading_scope()
         if not sentences:
+            self._notify(MSG_EMPTY_RANGE)
             return
         voice = self.voice_combo.currentData()
         if voice is None:
@@ -497,6 +633,13 @@ class MainWindow(QMainWindow):
         self._player.shutdown()
         self.pdf_view.shutdown()
         super().closeEvent(event)
+
+
+def _first_local_file(event: QDropEvent) -> str | None:
+    for url in event.mimeData().urls():
+        if url.isLocalFile():
+            return url.toLocalFile()
+    return None
 
 
 def _preferred_index(voices: list[Voice], select_key: str | None) -> int:

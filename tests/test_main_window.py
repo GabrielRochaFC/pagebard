@@ -741,3 +741,210 @@ def test_speed_shortcuts(shown):
     shown.speed_slider.setValue(5)
     QTest.keyClick(shown, Qt.Key.Key_Minus)
     assert shown.speed_slider.value() == 5
+
+
+# ---- page range, zoom, drag and drop ------------------------------------------------
+
+from PySide6.QtCore import QMimeData, QPointF, QUrl  # noqa: E402
+from PySide6.QtGui import QDragEnterEvent, QDropEvent  # noqa: E402
+from PySide6.QtWidgets import QApplication  # noqa: E402
+
+from leitorpdf.ui.messages import MSG_EMPTY_RANGE  # noqa: E402
+
+CTRL = Qt.KeyboardModifier.ControlModifier
+
+
+def page_range(window):
+    return window.first_page_spin.value(), window.last_page_spin.value()
+
+
+def drop(window, urls=(), text=None):
+    """Drag something onto the window; returns whether the window accepted it."""
+    mime = QMimeData()
+    if urls:
+        mime.setUrls(list(urls))
+    if text is not None:
+        mime.setText(text)
+    copy = Qt.DropAction.CopyAction
+    enter = QDragEnterEvent(QPointF(60, 200), copy, mime, LEFT, NONE)
+    QApplication.sendEvent(window, enter)
+    if not enter.isAccepted():
+        return False
+    QApplication.sendEvent(window, QDropEvent(QPointF(60, 200), copy, mime, LEFT, NONE))
+    return True
+
+
+def test_page_range_is_disabled_without_a_document(window):
+    assert not window.first_page_spin.isEnabled()
+    assert not window.last_page_spin.isEnabled()
+
+
+def test_page_range_defaults_to_the_whole_document(window, qapp, make_pdf):
+    open_and_wait(qapp, window, make_pdf(["Um.", "Dois.", "Três."]))
+    assert page_range(window) == (1, 3)
+    assert window.first_page_spin.isEnabled() and window.last_page_spin.isEnabled()
+    for spin in (window.first_page_spin, window.last_page_spin):
+        assert (spin.minimum(), spin.maximum()) == (1, 3)
+
+
+def test_reads_only_the_selected_pages(window, qapp, make_pdf, synth):
+    open_and_wait(qapp, window, make_pdf(["Um.", "Dois.", "Três."]))
+    window.first_page_spin.setValue(2)
+    read_to_the_end(qapp, window)
+    assert synth.spoken == ["Dois.", "Três."]
+    synth.spoken.clear()
+    window.last_page_spin.setValue(2)
+    read_to_the_end(qapp, window)
+    assert synth.spoken == ["Dois."]
+
+
+def test_first_page_never_exceeds_last(window, qapp, make_pdf):
+    open_and_wait(qapp, window, make_pdf(["Um.", "Dois.", "Três."]))
+    window.last_page_spin.setValue(2)
+    window.first_page_spin.setValue(3)
+    assert page_range(window) == (3, 3)
+    window.last_page_spin.setValue(1)
+    assert page_range(window) == (1, 1)
+
+
+def test_changing_the_range_stops_playback_and_clears_the_start_point(
+    shown, qapp, player, out, synth
+):
+    click_word(shown, 2)
+    start_long_playback(qapp, shown, player, out, synth)
+    shown.last_page_spin.setValue(1)
+    assert player.state is PlayerState.STOPPED
+    assert shown.pdf_view.start_marker() is None
+    assert shown.play_button.text() == PLAY
+
+
+def test_range_without_text_shows_notice(window, qapp, make_pdf, notes, player):
+    open_and_wait(qapp, window, make_pdf(["Um.", "", "Três."]))
+    window.first_page_spin.setValue(2)
+    window.last_page_spin.setValue(2)
+    window.play_button.click()
+    assert notes == [MSG_EMPTY_RANGE]
+    assert player.state is PlayerState.STOPPED
+
+
+def test_start_point_inside_the_range_is_used(shown, qapp, synth):
+    shown.last_page_spin.setValue(1)
+    click_word(shown, 2)
+    assert page_range(shown) == (1, 1)
+    read_to_the_end(qapp, shown)
+    assert synth.spoken == ["Três quatro."]
+
+
+def test_click_before_the_range_moves_its_start(shown):
+    shown.first_page_spin.setValue(2)
+    click_word(shown, 0)
+    assert page_range(shown) == (1, 2)
+    assert shown.pdf_view.start_marker() == sentence_range(shown, 0)
+
+
+def test_click_after_the_range_moves_it_there(shown, qapp, synth):
+    shown.last_page_spin.setValue(1)
+    shown.pdf_view.go_to_page(2)
+    click_word(shown, 4)
+    assert page_range(shown) == (2, 2)
+    assert shown.pdf_view.start_marker() == sentence_range(shown, 2)
+    read_to_the_end(qapp, shown)
+    assert synth.spoken == ["Cinco seis."]
+
+
+def test_new_document_resets_the_range(window, qapp, make_pdf):
+    open_and_wait(qapp, window, make_pdf(["Um.", "Dois.", "Três."], name="a.pdf"))
+    window.first_page_spin.setValue(2)
+    window.open_path(make_pdf(["Só.", "Duas."], name="b.pdf"))
+    wait_until(qapp, lambda: window.reading.page_count == 2)
+    assert page_range(window) == (1, 2)
+    assert window.last_page_spin.maximum() == 2
+
+
+def test_zoom_controls_need_a_document(window):
+    assert window.zoom_label.text() == ""
+    assert not window.zoom_in_button.isEnabled()
+    assert not window.zoom_out_button.isEnabled()
+    assert not window.fit_button.isEnabled()
+
+
+def test_zoom_buttons_and_label(shown):
+    view = shown.pdf_view
+
+    def percent():
+        return f"{round(view.zoom() / (96 / 72) * 100)}%"
+
+    start = view.zoom()
+    assert shown.zoom_label.text() == percent()
+    shown.zoom_in_button.click()
+    assert abs(view.zoom() - start * 1.25) < 0.001
+    assert shown.zoom_label.text() == percent()
+    shown.zoom_out_button.click()
+    shown.zoom_out_button.click()
+    assert abs(view.zoom() - start / 1.25) < 0.001
+    assert shown.zoom_label.text() == percent()
+    shown.fit_button.click()
+    assert view.is_fit_width()
+    assert abs(view.zoom() - start) < 0.001
+
+
+def test_zoom_shortcuts(shown):
+    view = shown.pdf_view
+    start = view.zoom()
+    QTest.keyClick(shown, Qt.Key.Key_Plus, CTRL)
+    assert view.zoom() > start
+    QTest.keyClick(shown, Qt.Key.Key_0, CTRL)
+    assert view.is_fit_width()
+    QTest.keyClick(shown, Qt.Key.Key_Minus, CTRL)
+    assert view.zoom() < start
+    assert shown.speed_slider.value() == 10  # the plain + and - keys are for speed
+
+
+def test_dropping_a_pdf_opens_it(window, qapp, make_pdf):
+    path = make_pdf(["Arrastado e solto."])
+    assert drop(window, [QUrl.fromLocalFile(str(path))])
+    wait_until(qapp, lambda: window.reading is not None)
+    assert window.reading.text == "Arrastado e solto."
+
+
+def test_dropping_several_files_opens_the_first(window, qapp, make_pdf):
+    first = make_pdf(["Primeiro."], name="a.pdf")
+    second = make_pdf(["Segundo."], name="b.pdf")
+    assert drop(window, [QUrl.fromLocalFile(str(first)), QUrl.fromLocalFile(str(second))])
+    wait_until(qapp, lambda: window.reading is not None)
+    assert window.reading.text == "Primeiro."
+
+
+def test_dropping_a_web_link_or_text_is_ignored(window, qapp, notes):
+    assert not drop(window, [QUrl("https://example.com/arquivo.pdf")])
+    assert not drop(window, text="apenas um texto")
+    qapp.processEvents()
+    assert window.reading is None
+    assert notes == []
+
+
+def test_dropping_a_non_pdf_reports_and_keeps_the_document(
+    window, qapp, make_pdf, notes, tmp_path
+):
+    open_and_wait(qapp, window, make_pdf(["Texto bom."]))
+    picture = tmp_path / "foto.png"
+    picture.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 32)
+    assert drop(window, [QUrl.fromLocalFile(str(picture))])
+    wait_until(qapp, lambda: notes)
+    assert notes == [MSG_INVALID]
+    assert window.reading.text == "Texto bom."
+
+
+def test_dropping_on_the_page_area_reaches_the_window(shown, qapp, make_pdf):
+    path = make_pdf(["Solto sobre a página."], name="novo.pdf")
+    mime = QMimeData()
+    mime.setUrls([QUrl.fromLocalFile(str(path))])
+    viewport = shown.pdf_view.viewport()
+    assert not viewport.acceptDrops() and shown.acceptDrops()
+    copy = Qt.DropAction.CopyAction
+    spot = QPointF(viewport.rect().center())
+    enter = QDragEnterEvent(spot, copy, mime, LEFT, NONE)
+    QApplication.sendEvent(viewport, enter)  # travels up to the window
+    assert enter.isAccepted()
+    QApplication.sendEvent(viewport, QDropEvent(spot, copy, mime, LEFT, NONE))
+    wait_until(qapp, lambda: shown.reading.text == "Solto sobre a página.")

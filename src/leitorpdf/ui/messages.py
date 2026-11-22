@@ -12,6 +12,7 @@ MSG_NEED_VOICE = (
     "Para ler em voz alta é preciso baixar uma voz (63 MB, só na primeira "
     "vez). Baixar agora?"
 )
+MSG_EMPTY_RANGE = "Não há texto para ler nas páginas escolhidas."
 
 
 def show_error(parent: QWidget | None, text: str) -> None:
