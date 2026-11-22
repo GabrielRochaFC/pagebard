@@ -1,6 +1,7 @@
 """Extract readable text from a PDF, with the position of every word."""
 
 import os
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -22,6 +23,11 @@ Rect = tuple[float, float, float, float]
 
 # Default word flags, minus ligature preservation so "ﬁ" comes out as "fi".
 _TEXT_FLAGS = pymupdf.TEXTFLAGS_WORDS & ~pymupdf.TEXT_PRESERVE_LIGATURES
+
+# PyMuPDF is not safe to call from two threads at once, even on different
+# documents. Everything that touches it (loading here, page rendering in the
+# viewer) takes this lock around each short burst of calls.
+MUPDF_LOCK = threading.RLock()
 
 # MuPDF reports problems through exceptions; keep its stderr chatter off.
 pymupdf.TOOLS.mupdf_display_errors(False)
@@ -57,25 +63,31 @@ def load_pdf(path: str | Path) -> PdfText:
     if not path.is_file() or not os.access(path, os.R_OK):
         raise PdfError(MSG_NOT_FOUND)
     try:
-        doc = pymupdf.open(path)
+        with MUPDF_LOCK:
+            doc = pymupdf.open(path)
     except Exception as exc:
         raise PdfError(MSG_INVALID) from exc
     try:
-        if not doc.is_pdf:
-            raise PdfError(MSG_INVALID)
-        if doc.needs_pass:
-            raise PdfError(MSG_PASSWORD)
+        with MUPDF_LOCK:
+            if not doc.is_pdf:
+                raise PdfError(MSG_INVALID)
+            if doc.needs_pass:
+                raise PdfError(MSG_PASSWORD)
+            page_count = doc.page_count
         texts, words, sizes = [], [], []
         try:
-            for page in doc:
-                text, page_words = _page_content(page)
+            for index in range(page_count):
+                with MUPDF_LOCK:  # per page, so the viewer can render in between
+                    page = doc[index]
+                    text, page_words = _page_content(page)
+                    sizes.append((float(page.rect.width), float(page.rect.height)))
                 texts.append(text)
                 words.append(page_words)
-                sizes.append((float(page.rect.width), float(page.rect.height)))
         except Exception as exc:
             raise PdfError(MSG_INVALID) from exc
     finally:
-        doc.close()
+        with MUPDF_LOCK:
+            doc.close()
     return PdfText(
         path=path, pages=tuple(texts), words=tuple(words), page_sizes=tuple(sizes)
     )
