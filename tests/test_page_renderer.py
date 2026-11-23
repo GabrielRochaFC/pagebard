@@ -4,7 +4,7 @@ import time
 import pymupdf
 import pytest
 
-from leitorpdf.ui.page_renderer import PageRenderer
+from pagebard.ui.page_renderer import PageRenderer
 
 
 @pytest.fixture

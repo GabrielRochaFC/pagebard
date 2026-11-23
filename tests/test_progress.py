@@ -6,8 +6,8 @@ from fakes import wait_until
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication
 
-from leitorpdf.core.errors import LeitorError
-from leitorpdf.ui.progress import Cancelled, run_with_progress
+from pagebard.core.errors import PagebardError
+from pagebard.ui.progress import Cancelled, run_with_progress
 
 
 def test_returns_the_result(qapp):
@@ -62,7 +62,7 @@ def test_failure_is_reported(qapp):
     notes = []
 
     def work(report, cancel):
-        raise LeitorError("Deu errado.")
+        raise PagebardError("Deu errado.")
 
     assert run_with_progress(None, "…", work, notes.append) == ("failed", None)
     assert notes == ["Deu errado."]

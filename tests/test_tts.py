@@ -2,9 +2,9 @@ import re
 
 import pytest
 
-from leitorpdf.core import paths
-from leitorpdf.core.tts import MSG_TTS, Synthesizer, TtsError
-from leitorpdf.core.voices import DEFAULT_VOICE_KEY
+from pagebard.core import paths
+from pagebard.core.tts import MSG_TTS, Synthesizer, TtsError
+from pagebard.core.voices import DEFAULT_VOICE_KEY
 
 # Resolved at import time, before any test redirects XDG_DATA_HOME.
 REAL = paths.voices_dir() / f"{DEFAULT_VOICE_KEY}.onnx"

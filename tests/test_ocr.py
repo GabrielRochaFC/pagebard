@@ -5,9 +5,9 @@ import time
 import pymupdf
 import pytest
 
-from leitorpdf.core import ocr, paths
-from leitorpdf.core.pdf import load_pdf, with_ocr
-from leitorpdf.core.reading import build_reading
+from pagebard.core import ocr, paths
+from pagebard.core.pdf import load_pdf, with_ocr
+from pagebard.core.reading import build_reading
 
 TEXT = "Este documento foi escaneado. O reconhecimento deve encontrar estas palavras."
 
@@ -42,7 +42,7 @@ def test_language_follows_the_voice():
 
 def test_tessdata_dir_is_in_the_data_folder(monkeypatch, tmp_path):
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
-    assert paths.tessdata_dir() == tmp_path / "leitorpdf" / "tessdata"
+    assert paths.tessdata_dir() == tmp_path / "pagebard" / "tessdata"
     assert paths.tessdata_dir().is_dir()
 
 
@@ -206,7 +206,7 @@ def test_recognition_does_not_stall_this_process(tessdata, make_scanned_pdf):
 
 
 def test_ocr_resolution_is_capped_for_oversized_pages():
-    from leitorpdf.core.render_worker import ocr_dpi
+    from pagebard.core.render_worker import ocr_dpi
 
     assert ocr_dpi(595, 842) == 300  # A4
     assert ocr_dpi(842, 1191) == 241  # A3: 4000 px on the long side

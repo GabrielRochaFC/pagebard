@@ -63,9 +63,9 @@ def tessdata():
     import tempfile
     from pathlib import Path
 
-    from leitorpdf.core import ocr
+    from pagebard.core import ocr
 
-    folder = Path(tempfile.gettempdir()) / "leitorpdf-test-tessdata"
+    folder = Path(tempfile.gettempdir()) / "pagebard-test-tessdata"
     if not ocr.has_language("por", folder):
         try:
             ocr.download_language("por", folder)

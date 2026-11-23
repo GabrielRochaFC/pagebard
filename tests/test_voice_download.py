@@ -2,14 +2,14 @@ from fakes import wait_until
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication
 
-from leitorpdf.core.voices import (
+from pagebard.core.voices import (
     DEFAULT_VOICE_KEY,
     MSG_DOWNLOAD,
     DownloadCancelled,
     Voice,
     VoiceDownloadError,
 )
-from leitorpdf.ui.voice_download import download_default_voice
+from pagebard.ui.voice_download import download_default_voice
 
 
 def test_returns_the_voice_when_the_download_succeeds(qapp, tmp_path):
@@ -80,7 +80,7 @@ def test_stuck_download_ending_after_the_dialog_is_gone_is_harmless(qapp, tmp_pa
     import threading
 
     def download_threads():
-        return [t for t in threading.enumerate() if t.name == "leitorpdf-work"]
+        return [t for t in threading.enumerate() if t.name == "pagebard-work"]
 
     for _ in range(15):
         release = threading.Event()

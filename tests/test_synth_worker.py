@@ -1,7 +1,7 @@
 import threading
 import time
 
-from leitorpdf.playback.synth_worker import SynthEnd, SynthFailed, SynthItem, SynthWorker
+from pagebard.playback.synth_worker import SynthEnd, SynthFailed, SynthItem, SynthWorker
 
 
 def drain(worker, timeout=2.0):

@@ -3,7 +3,7 @@ import re
 import pymupdf
 import pytest
 
-from leitorpdf.core.pdf import (
+from pagebard.core.pdf import (
     MSG_INVALID,
     MSG_NOT_FOUND,
     MSG_PASSWORD,

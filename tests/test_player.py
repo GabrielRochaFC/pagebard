@@ -4,9 +4,9 @@ import time
 import pytest
 from fakes import FakeAudioOut
 
-from leitorpdf.core.errors import LeitorError
-from leitorpdf.playback.audio_out import MSG_NO_AUDIO, AudioError
-from leitorpdf.playback.player import Player, PlayerState
+from pagebard.core.errors import PagebardError
+from pagebard.playback.audio_out import MSG_NO_AUDIO, AudioError
+from pagebard.playback.player import Player, PlayerState
 
 RATE = 22050
 
@@ -22,7 +22,7 @@ def run(player, until, timeout=2.0):
 
 
 def synth_threads():
-    return [t for t in threading.enumerate() if t.name == "leitorpdf-synth"]
+    return [t for t in threading.enumerate() if t.name == "pagebard-synth"]
 
 
 def wait_no_synth_threads(timeout=1.0):
@@ -156,7 +156,7 @@ def test_does_not_finish_while_audio_still_playing(player, out, rec):
 
 def test_synthesis_failure_reports_error(player, out, rec):
     def failing(text):
-        raise LeitorError("Falhou.")
+        raise PagebardError("Falhou.")
 
     player.play(failing, RATE, ["a", "b"])
     run(player, lambda: rec.errors)

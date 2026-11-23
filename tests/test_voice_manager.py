@@ -3,7 +3,7 @@ from fakes import wait_until
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QMessageBox
 
-from leitorpdf.core.voices import (
+from pagebard.core.voices import (
     MSG_CATALOG,
     MSG_DOWNLOAD,
     CatalogVoice,
@@ -11,7 +11,7 @@ from leitorpdf.core.voices import (
     VoiceDownloadError,
     installed_voices,
 )
-from leitorpdf.ui.voice_manager import VoiceManagerDialog
+from pagebard.ui.voice_manager import VoiceManagerDialog
 
 CATALOG = [
     CatalogVoice("pt_BR-cadu-medium", "pt_BR", "cadu", "medium", 63_000_000),

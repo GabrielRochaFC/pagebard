@@ -8,9 +8,9 @@ from PySide6.QtCore import QPoint, Qt
 from PySide6.QtGui import QColor
 from PySide6.QtTest import QTest
 
-from leitorpdf.core.pdf import load_pdf
-from leitorpdf.core.reading import build_reading
-from leitorpdf.ui.pdf_view import PdfView
+from pagebard.core.pdf import load_pdf
+from pagebard.core.reading import build_reading
+from pagebard.ui.pdf_view import PdfView
 
 LEFT = Qt.MouseButton.LeftButton
 RIGHT = Qt.MouseButton.RightButton
@@ -18,7 +18,7 @@ NONE = Qt.KeyboardModifier.NoModifier
 
 
 def render_threads():
-    return [t for t in threading.enumerate() if t.name == "leitorpdf-render"]
+    return [t for t in threading.enumerate() if t.name == "pagebard-render"]
 
 
 class Signals:

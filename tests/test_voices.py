@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from leitorpdf.core.voices import (
+from pagebard.core.voices import (
     CATALOG_URL,
     HF_BASE,
     MSG_CATALOG,

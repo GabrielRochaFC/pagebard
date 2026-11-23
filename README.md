@@ -1,13 +1,13 @@
-# LeitorPDF
+# Pagebard
 
 Lê PDFs em voz alta no Linux, sem internet, usando as vozes do
 [Piper](https://github.com/OHF-Voice/piper1-gpl). Funciona só com a CPU.
 
 ## Instalar em 3 passos
 
-1. Baixe o arquivo **`LeitorPDF.flatpak`**.
+1. Baixe o arquivo **`Pagebard.flatpak`**.
 2. Dê dois cliques nele. A loja de aplicativos abre: clique em **Instalar**.
-3. Abra o **LeitorPDF** pelo menu de aplicativos.
+3. Abra o **Pagebard** pelo menu de aplicativos.
 
 Na primeira leitura o programa oferece baixar uma voz em português (63 MB).
 Depois disso funciona sem internet.
@@ -18,7 +18,7 @@ Depois disso funciona sem internet.
 >
 > Se o duplo clique não abrir a loja (nem toda distribuição associa arquivos
 > `.flatpak`), instale com um único comando no terminal:
-> `flatpak install --user LeitorPDF.flatpak`
+> `flatpak install --user Pagebard.flatpak`
 
 ## Como usar
 
@@ -63,7 +63,7 @@ Com `flatpak` e `flatpak-builder` instalados:
 packaging/flatpak/build.sh
 ```
 
-O resultado é `LeitorPDF.flatpak`, na raiz do projeto. O que falta (SDK e
+O resultado é `Pagebard.flatpak`, na raiz do projeto. O que falta (SDK e
 bibliotecas Python) é baixado do Flathub e do PyPI durante a construção.
 
 ## Rodar em desenvolvimento
@@ -71,7 +71,7 @@ bibliotecas Python) é baixado do Flathub e do PyPI durante a construção.
 ```bash
 python3 -m venv .venv
 .venv/bin/python -m pip install -e ".[dev]"
-.venv/bin/python -m leitorpdf
+.venv/bin/python -m pagebard
 ```
 
 Testes: `.venv/bin/python -m pytest`

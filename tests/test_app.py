@@ -1,6 +1,6 @@
 from PySide6.QtCore import QCoreApplication
 
-from leitorpdf.app import install_translations
+from pagebard.app import install_translations
 
 
 def test_standard_dialog_buttons_are_in_portuguese(qapp):
@@ -12,7 +12,7 @@ def test_standard_dialog_buttons_are_in_portuguese(qapp):
 def test_quiet_qt_logging_silences_known_noise(qapp):
     from PySide6.QtCore import QLoggingCategory
 
-    from leitorpdf.app import quiet_qt_logging
+    from pagebard.app import quiet_qt_logging
 
     quiet_qt_logging()
     assert not QLoggingCategory("qt.qpa.wayland.textinput").isWarningEnabled()
@@ -26,10 +26,10 @@ def test_quiet_qt_logging_silences_known_noise(qapp):
 
 
 def test_file_given_on_the_command_line():
-    from leitorpdf.app import file_argument
+    from pagebard.app import file_argument
 
-    assert file_argument(["leitorpdf"]) is None
-    assert file_argument(["leitorpdf", "/tmp/a.pdf"]) == "/tmp/a.pdf"
-    assert file_argument(["leitorpdf", "--estilo", "x", "-v"]) == "x"
-    assert file_argument(["leitorpdf", "-platform"]) is None
-    assert file_argument(["leitorpdf", "file:///tmp/meu%20livro.pdf"]) == "/tmp/meu livro.pdf"
+    assert file_argument(["pagebard"]) is None
+    assert file_argument(["pagebard", "/tmp/a.pdf"]) == "/tmp/a.pdf"
+    assert file_argument(["pagebard", "--estilo", "x", "-v"]) == "x"
+    assert file_argument(["pagebard", "-platform"]) is None
+    assert file_argument(["pagebard", "file:///tmp/meu%20livro.pdf"]) == "/tmp/meu livro.pdf"

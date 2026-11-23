@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Pagebard
+GenericName=Leitor de PDF em voz alta
+Comment=Lê PDFs em voz alta, sem internet
+Exec=pagebard %f
+Icon=io.github.gabrielrochafc.Pagebard
+Terminal=false
+Categories=Office;Viewer;
+Keywords=PDF;voz;leitura;ouvir;áudio;MP3;
+MimeType=application/pdf;
+StartupNotify=true

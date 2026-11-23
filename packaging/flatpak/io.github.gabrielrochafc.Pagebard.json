@@ -1,0 +1,99 @@
+{
+    "id": "io.github.gabrielrochafc.Pagebard",
+    "runtime": "org.freedesktop.Platform",
+    "runtime-version": "26.08",
+    "sdk": "org.freedesktop.Sdk",
+    "command": "pagebard",
+    "finish-args": [
+        "--socket=wayland",
+        "--socket=fallback-x11",
+        "--share=ipc",
+        "--device=dri",
+        "--socket=pulseaudio",
+        "--share=network",
+        "--filesystem=home"
+    ],
+    "modules": [
+        {
+            "name": "python-deps",
+            "buildsystem": "simple",
+            "build-options": {
+                "build-args": [
+                    "--share=network"
+                ]
+            },
+            "build-commands": [
+                "pip3 install --prefix=/app --no-cache-dir -r requirements.txt",
+                "pip3 install --prefix=/app --no-cache-dir --no-deps -r requirements-nodeps.txt"
+            ],
+            "sources": [
+                {
+                    "type": "file",
+                    "path": "requirements.txt"
+                },
+                {
+                    "type": "file",
+                    "path": "requirements-nodeps.txt"
+                }
+            ]
+        },
+        {
+            "name": "krb5",
+            "subdir": "src",
+            "config-opts": [
+                "--localstatedir=/var/lib",
+                "--sbindir=${FLATPAK_DEST}/bin",
+                "--disable-rpath",
+                "--disable-static"
+            ],
+            "cleanup": [
+                "/bin",
+                "/include",
+                "/lib/pkgconfig",
+                "/share/et",
+                "/share/examples",
+                "/share/man"
+            ],
+            "sources": [
+                {
+                    "type": "archive",
+                    "url": "https://kerberos.org/dist/krb5/1.22/krb5-1.22.3.tar.gz",
+                    "sha256": "fe90af8441ad9fa9b064b8e53077cefb782a96f8a68276b031dc54af1789ff0b"
+                }
+            ]
+        },
+        {
+            "name": "pagebard",
+            "buildsystem": "simple",
+            "build-options": {
+                "build-args": [
+                    "--share=network"
+                ]
+            },
+            "build-commands": [
+                "pip3 install --prefix=/app --no-cache-dir --no-deps .",
+                "install -Dm644 packaging/flatpak/io.github.gabrielrochafc.Pagebard.desktop /app/share/applications/io.github.gabrielrochafc.Pagebard.desktop",
+                "install -Dm644 packaging/flatpak/io.github.gabrielrochafc.Pagebard.metainfo.xml /app/share/metainfo/io.github.gabrielrochafc.Pagebard.metainfo.xml",
+                "install -Dm644 packaging/flatpak/io.github.gabrielrochafc.Pagebard.svg /app/share/icons/hicolor/scalable/apps/io.github.gabrielrochafc.Pagebard.svg"
+            ],
+            "sources": [
+                {
+                    "type": "dir",
+                    "path": "../..",
+                    "skip": [
+                        ".venv",
+                        ".git",
+                        ".superpowers",
+                        ".pytest_cache",
+                        "tests",
+                        "docs",
+                        "Pagebard.flatpak",
+                        "packaging/flatpak/build-dir",
+                        "packaging/flatpak/repo",
+                        "packaging/flatpak/.flatpak-builder"
+                    ]
+                }
+            ]
+        }
+    ]
+}

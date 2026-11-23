@@ -8,13 +8,13 @@ from PySide6.QtGui import QKeySequence
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QFileDialog, QMessageBox
 
-from leitorpdf.core.errors import LeitorError
-from leitorpdf.core.pdf import MSG_INVALID
-from leitorpdf.core.voices import DEFAULT_VOICE_KEY, Voice
-from leitorpdf.playback.player import Player, PlayerState
-from leitorpdf.ui import main_window
-from leitorpdf.ui.main_window import MainWindow
-from leitorpdf.ui.messages import (
+from pagebard.core.errors import PagebardError
+from pagebard.core.pdf import MSG_INVALID
+from pagebard.core.voices import DEFAULT_VOICE_KEY, Voice
+from pagebard.playback.player import Player, PlayerState
+from pagebard.ui import main_window
+from pagebard.ui.main_window import MainWindow
+from pagebard.ui.messages import (
     MSG_NEED_VOICE,
     MSG_NO_TEXT,
     MSG_OCR_NOTHING,
@@ -91,9 +91,9 @@ def make_window(qapp, player, voices_dir, notes, synth):
         window.close()
     qapp.setFont(original_font)
     deadline = time.monotonic() + 2.0
-    while threads_named("leitorpdf-render") and time.monotonic() < deadline:
+    while threads_named("pagebard-render") and time.monotonic() < deadline:
         time.sleep(0.005)
-    assert threads_named("leitorpdf-render") == []
+    assert threads_named("pagebard-render") == []
 
 
 @pytest.fixture
@@ -127,7 +127,7 @@ def show_active(qapp, window):
 
 
 def test_starts_empty(window):
-    assert window.windowTitle() == "LeitorPDF"
+    assert window.windowTitle() == "Pagebard"
     assert window.reading is None
     assert window.pdf_view.reading is None
     assert not window.play_button.isEnabled()
@@ -431,7 +431,7 @@ def test_synthesizer_is_reused_while_the_voice_is_the_same(
 
 
 def test_synthesis_error_is_shown(window, qapp, make_pdf, notes, synth, player):
-    synth.error = LeitorError("Falhou.")
+    synth.error = PagebardError("Falhou.")
     open_and_wait(qapp, window, make_pdf(["Olá mundo."]))
     window.play_button.click()
     wait_until(qapp, lambda: notes)
@@ -524,8 +524,8 @@ def test_closing_the_window_stops_everything(window, qapp, make_pdf, player, out
     start_long_playback(qapp, window, player, out, synth)
     window.close()
     assert player.state is PlayerState.STOPPED
-    assert threads_named("leitorpdf-synth") == []
-    assert threads_named("leitorpdf-render") == []
+    assert threads_named("pagebard-synth") == []
+    assert threads_named("pagebard-render") == []
 
 
 # ---- where to start, reading a passage, speed (words: Um dois. Três quatro. | Cinco seis.) ----
@@ -757,7 +757,7 @@ from PySide6.QtCore import QMimeData, QPointF, QUrl  # noqa: E402
 from PySide6.QtGui import QDragEnterEvent, QDropEvent  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
-from leitorpdf.ui.messages import MSG_EMPTY_RANGE  # noqa: E402
+from pagebard.ui.messages import MSG_EMPTY_RANGE  # noqa: E402
 
 CTRL = Qt.KeyboardModifier.ControlModifier
 
@@ -1068,7 +1068,7 @@ def test_manager_can_install_the_first_voice(make_window, tmp_path):
 
 from PySide6.QtCore import QTimer  # noqa: E402
 
-from leitorpdf.core.export import MSG_EXPORT, ExportCancelled, ExportError  # noqa: E402
+from pagebard.core.export import MSG_EXPORT, ExportCancelled, ExportError  # noqa: E402
 
 
 class FakeExporter:
@@ -1220,7 +1220,7 @@ def test_export_without_voice_offers_download(
 
 # ---- OCR ----------------------------------------------------------------------------
 
-from leitorpdf.core import ocr  # noqa: E402
+from pagebard.core import ocr  # noqa: E402
 
 RECOGNIZED_WORDS = [
     [72.0, 80.0, 100.0, 96.0, "Olá", 0, 0, 0],
@@ -1454,8 +1454,8 @@ def test_ocr_result_is_dropped_if_another_document_took_over(
 ):
     import threading
 
-    from leitorpdf.core.pdf import load_pdf
-    from leitorpdf.core.reading import build_reading
+    from pagebard.core.pdf import load_pdf
+    from pagebard.core.reading import build_reading
 
     questions["answer"] = QMessageBox.StandardButton.No
     release = threading.Event()
@@ -1511,7 +1511,7 @@ def test_menu_bar_has_every_action(window):
             "Ajustar à largura",
             "Texto da interface",
         ],
-        "A&juda": ["Atalhos de teclado", "Sobre o LeitorPDF"],
+        "A&juda": ["Atalhos de teclado", "Sobre o Pagebard"],
     }
     shortcuts = {
         action.text(): [key.toString() for key in action.shortcuts()]
@@ -1578,7 +1578,7 @@ def test_f1_shows_the_shortcuts(window, qapp, monkeypatch):
 
 
 def test_shortcuts_dialog_lists_the_keys(qapp):
-    from leitorpdf.ui.shortcuts_dialog import ShortcutsDialog
+    from pagebard.ui.shortcuts_dialog import ShortcutsDialog
 
     dialog = ShortcutsDialog()
     rows = dialog.rows()
@@ -1595,7 +1595,7 @@ def test_about_names_the_license(window, monkeypatch):
     monkeypatch.setattr(QMessageBox, "about", lambda parent, title, text: seen.append((title, text)))
     window.about_action.trigger()
     [(title, text)] = seen
-    assert title == "Sobre o LeitorPDF"
+    assert title == "Sobre o Pagebard"
     assert "AGPL" in text and "Piper" in text and "PyMuPDF" in text
 
 

@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from leitorpdf.app import APP_ID
+from pagebard.app import APP_ID
 
 PACKAGING = Path(__file__).parent.parent / "packaging" / "flatpak"
 
@@ -25,7 +25,7 @@ def manifest():
 def test_manifest_describes_this_app():
     data = manifest()
     assert data["id"] == APP_ID
-    assert data["command"] == "leitorpdf"
+    assert data["command"] == "pagebard"
     assert data["runtime"] == "org.freedesktop.Platform"
     assert data["sdk"] == "org.freedesktop.Sdk"
     assert data["runtime-version"] == "26.08"  # has Python 3.14 and ffmpeg with MP3
@@ -37,7 +37,7 @@ def test_manifest_describes_this_app():
         "--filesystem=home",  # open PDFs, save MP3s, drag and drop
     ):
         assert permission in data["finish-args"]
-    assert [module["name"] for module in data["modules"]] == ["python-deps", "krb5", "leitorpdf"]
+    assert [module["name"] for module in data["modules"]] == ["python-deps", "krb5", "pagebard"]
 
 
 def test_kerberos_library_is_bundled_from_a_pinned_source():
@@ -66,8 +66,8 @@ def test_desktop_file():
     text = packaged(".desktop").read_text(encoding="utf-8")
     entries = dict(line.split("=", 1) for line in text.splitlines() if "=" in line)
     assert entries["Type"] == "Application"
-    assert entries["Name"] == "LeitorPDF"
-    assert entries["Exec"] == "leitorpdf %f"
+    assert entries["Name"] == "Pagebard"
+    assert entries["Exec"] == "pagebard %f"
     assert entries["Icon"] == APP_ID
     assert "application/pdf" in entries["MimeType"].split(";")
     assert entries["Terminal"] == "false"
@@ -82,7 +82,7 @@ def test_desktop_file():
 def test_metainfo():
     root = ET.parse(packaged(".metainfo.xml")).getroot()
     assert root.findtext("id") == APP_ID
-    assert root.findtext("name") == "LeitorPDF"
+    assert root.findtext("name") == "Pagebard"
     assert root.findtext("project_license") == "AGPL-3.0-or-later"
     assert root.find("launchable").text == f"{APP_ID}.desktop"
     assert root.find("releases/release").get("version") == "0.1.0"
@@ -113,7 +113,7 @@ def test_build_script_is_runnable():
 def test_version_is_the_same_everywhere():
     import tomllib
 
-    import leitorpdf
+    import pagebard
 
     project = tomllib.loads((PACKAGING.parent.parent / "pyproject.toml").read_text())
-    assert project["project"]["version"] == leitorpdf.__version__ == "0.1.0"
+    assert project["project"]["version"] == pagebard.__version__ == "0.1.0"

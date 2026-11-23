@@ -1,7 +1,7 @@
 import pytest
 
-from leitorpdf.core.pdf import load_pdf
-from leitorpdf.core.reading import build_reading
+from pagebard.core.pdf import load_pdf
+from pagebard.core.reading import build_reading
 
 
 @pytest.fixture

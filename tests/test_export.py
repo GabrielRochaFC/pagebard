@@ -8,8 +8,8 @@ from array import array
 
 import pytest
 
-from leitorpdf.core.errors import LeitorError
-from leitorpdf.core.export import (
+from pagebard.core.errors import PagebardError
+from pagebard.core.export import (
     MSG_EXPORT,
     MSG_NO_FFMPEG,
     ExportCancelled,
@@ -82,10 +82,10 @@ def test_existing_file_is_replaced_only_on_success(tmp_path):
 
     def failing(text):
         if text == "b":
-            raise LeitorError("A voz falhou.")
+            raise PagebardError("A voz falhou.")
         return tone()
 
-    with pytest.raises(LeitorError, match="A voz falhou."):
+    with pytest.raises(PagebardError, match="A voz falhou."):
         export_mp3(["a", "b"], failing, RATE, dest)
     assert dest.read_bytes() == b"antigo"
     assert [p.name for p in tmp_path.iterdir()] == ["x.mp3"]

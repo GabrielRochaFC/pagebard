@@ -5,7 +5,7 @@ import time
 import pytest
 from PySide6.QtMultimedia import QMediaDevices
 
-from leitorpdf.playback.audio_out import QtAudioOut
+from pagebard.playback.audio_out import QtAudioOut
 
 RATE = 22050
 SILENCE_100MS = b"\x00" * (RATE * 2 // 10)
@@ -55,7 +55,7 @@ def test_stopped_device_is_idle_and_takes_nothing(out):
 
 
 def test_mono_samples_are_copied_to_both_channels():
-    from leitorpdf.playback.audio_out import mono_to_stereo
+    from pagebard.playback.audio_out import mono_to_stereo
 
     assert mono_to_stereo(b"\x01\x00\x02\xff") == b"\x01\x00\x01\x00\x02\xff\x02\xff"
     assert mono_to_stereo(b"") == b""

@@ -2,7 +2,7 @@ import threading
 
 from fakes import wait_until
 
-from leitorpdf.ui.tasks import run_async
+from pagebard.ui.tasks import run_async
 
 
 def test_result_is_delivered_on_the_ui_thread(qapp):
@@ -55,7 +55,7 @@ def test_result_arriving_after_qt_is_gone_is_dropped_quietly(qapp):
     # finishes after Qt has torn down the object that carries results.
     import shiboken6
 
-    from leitorpdf.ui import tasks
+    from pagebard.ui import tasks
 
     bridge = tasks._Bridge()
     succeeding = tasks._Task(1, lambda: 42, bridge)

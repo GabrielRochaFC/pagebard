@@ -1,4 +1,4 @@
-from leitorpdf.core.segmenter import MAX_SENTENCE_CHARS, split_sentences
+from pagebard.core.segmenter import MAX_SENTENCE_CHARS, split_sentences
 
 
 def texts(source):
