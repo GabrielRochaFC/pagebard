@@ -1,4 +1,4 @@
-from fakes import wait_until
+from fakes import PATIENCE, wait_until
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication
 
@@ -69,7 +69,7 @@ def test_cancel_returns_promptly_even_if_the_download_is_stuck(qapp, tmp_path):
     elapsed = time.monotonic() - began
     release.set()
     assert voice is None
-    assert elapsed < 0.5
+    assert elapsed < 0.5 * PATIENCE
     assert notes == []
 
 

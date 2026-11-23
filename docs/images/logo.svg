@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <!-- A sheet of paper with sound coming out of it. -->
+  <rect x="8" y="8" width="112" height="112" rx="24" fill="#2563EB"/>
+  <path d="M34 26h34l18 18v58a4 4 0 0 1-4 4H34a4 4 0 0 1-4-4V30a4 4 0 0 1 4-4z" fill="#FFFFFF"/>
+  <path d="M68 26v14a4 4 0 0 0 4 4h14z" fill="#BFDBFE"/>
+  <rect x="40" y="54" width="30" height="5" rx="2.5" fill="#93C5FD"/>
+  <rect x="40" y="66" width="36" height="5" rx="2.5" fill="#FDE68A"/>
+  <rect x="40" y="78" width="26" height="5" rx="2.5" fill="#93C5FD"/>
+  <rect x="40" y="90" width="32" height="5" rx="2.5" fill="#93C5FD"/>
+  <g fill="none" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round">
+    <path d="M96 62a12 12 0 0 1 0 20"/>
+    <path d="M104 52a26 26 0 0 1 0 40"/>
+  </g>
+</svg>

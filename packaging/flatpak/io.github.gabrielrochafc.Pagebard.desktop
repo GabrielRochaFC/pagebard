@@ -1,12 +1,18 @@
 [Desktop Entry]
 Type=Application
 Name=Pagebard
-GenericName=Leitor de PDF em voz alta
-Comment=Lê PDFs em voz alta, sem internet
+GenericName=PDF Read-Aloud
+GenericName[pt_BR]=Leitor de PDF em voz alta
+GenericName[es]=Lector de PDF en voz alta
+Comment=Listen to your PDFs, read aloud without internet
+Comment[pt_BR]=Lê PDFs em voz alta, sem internet
+Comment[es]=Lee PDF en voz alta, sin internet
 Exec=pagebard %f
 Icon=io.github.gabrielrochafc.Pagebard
 Terminal=false
 Categories=Office;Viewer;
-Keywords=PDF;voz;leitura;ouvir;áudio;MP3;
+Keywords=PDF;voice;read aloud;TTS;text to speech;audiobook;MP3;OCR;
+Keywords[pt_BR]=PDF;voz;leitura;ouvir;áudio;MP3;OCR;
+Keywords[es]=PDF;voz;lectura;escuchar;audio;MP3;OCR;
 MimeType=application/pdf;
 StartupNotify=true

@@ -1,6 +1,7 @@
 """Save the spoken text as an MP3 file, encoding with ffmpeg."""
 
 import os
+import shutil
 import subprocess
 import tempfile
 import threading
@@ -52,12 +53,7 @@ def export_mp3(
     failed export leaves nothing behind and keeps a previous file intact.
     """
     dest = Path(dest)
-    try:
-        handle, name = tempfile.mkstemp(dir=dest.parent, suffix=".mp3.part")
-        os.close(handle)
-    except OSError as exc:
-        raise ExportError(MSG_EXPORT) from exc
-    part = Path(name)
+    part = _temporary_file(dest)
     command = [
         ffmpeg, "-hide_banner", "-loglevel", "error",
         "-f", "s16le", "-ar", str(sample_rate), "-ac", "1", "-i", "pipe:0",
@@ -91,14 +87,38 @@ def export_mp3(
         encoder.stdin.close()
         if encoder.wait() != 0 or not wrote_audio:
             raise ExportError(MSG_EXPORT)
-        os.chmod(part, 0o666 & ~_UMASK)
-        os.replace(part, dest)
+        if part.parent == dest.parent:
+            os.chmod(part, 0o666 & ~_UMASK)
+            os.replace(part, dest)  # all or nothing
+        else:
+            shutil.copyfile(part, dest)
+            part.unlink(missing_ok=True)
     except OSError as exc:  # the encoder died, or the disk is full
         _abandon(encoder, part)
         raise ExportError(MSG_EXPORT) from exc
     except BaseException:
         _abandon(encoder, part)
         raise
+
+
+def _temporary_file(dest: Path) -> Path:
+    """Where the MP3 is written before it takes the name of `dest`.
+
+    Next to `dest` when possible, so that finishing is a rename. A sandboxed
+    program that got `dest` from the "save as" portal may write that file
+    only, not its folder: then the system's temporary folder is used and the
+    result is copied over at the end.
+    """
+    if not dest.parent.is_dir():
+        raise ExportError(MSG_EXPORT)
+    for folder in (dest.parent, Path(tempfile.gettempdir())):
+        try:
+            handle, name = tempfile.mkstemp(dir=folder, suffix=".mp3.part")
+        except OSError:
+            continue
+        os.close(handle)
+        return Path(name)
+    raise ExportError(MSG_EXPORT)
 
 
 def _abandon(encoder: subprocess.Popen | None, part: Path) -> None:

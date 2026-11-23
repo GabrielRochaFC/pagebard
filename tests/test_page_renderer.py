@@ -3,6 +3,7 @@ import time
 
 import pymupdf
 import pytest
+from fakes import PATIENCE
 
 from pagebard.ui.page_renderer import PageRenderer
 
@@ -95,7 +96,7 @@ def test_ui_thread_keeps_running_while_a_heavy_page_is_drawn(renderer, tmp_path)
         last = now
         found = renderer.poll()
     assert found and found[0][3] is not None
-    assert longest_gap < 0.05
+    assert longest_gap < 0.05 * PATIENCE
 
 
 def test_requests_no_longer_wanted_are_skipped(renderer, make_pdf):

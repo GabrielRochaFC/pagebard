@@ -460,6 +460,10 @@ msgstr "▶ Ler seleção"
 msgid "▶ Resume"
 msgstr "▶ Continuar"
 
+#. Between two page numbers: "Pages: 1 to 20".
+msgid "to"
+msgstr "a"
+
 msgid "{name} — {count} page"
 msgid_plural "{name} — {count} pages"
 msgstr[0] "{name} — {count} página"

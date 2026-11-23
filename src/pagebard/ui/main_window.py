@@ -303,7 +303,7 @@ class MainWindow(QMainWindow):
         self._row2.addSpacing(16)
         self._row2.addWidget(pages_title)
         self._row2.addWidget(self.first_page_spin)
-        self._row2.addWidget(QLabel("a"))
+        self._row2.addWidget(QLabel(_("to")))
         self._row2.addWidget(self.last_page_spin)
         self._row2.addStretch(1)
 

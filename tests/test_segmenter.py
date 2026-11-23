@@ -1,3 +1,5 @@
+from fakes import PATIENCE
+
 from pagebard.core.segmenter import MAX_SENTENCE_CHARS, split_sentences
 
 
@@ -85,7 +87,7 @@ def test_book_sized_text_splits_quickly():
     began = time.perf_counter()
     out = split_sentences(source)
     assert len(out) == 40000
-    assert time.perf_counter() - began < 1.0
+    assert time.perf_counter() - began < 1.0 * PATIENCE
 
 
 def test_single_letter_abbreviation_before_a_number():

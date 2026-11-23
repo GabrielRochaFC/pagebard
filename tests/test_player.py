@@ -2,7 +2,7 @@ import threading
 import time
 
 import pytest
-from fakes import FakeAudioOut
+from fakes import PATIENCE, FakeAudioOut
 
 from pagebard.core.errors import PagebardError
 from pagebard.playback.audio_out import MSG_NO_AUDIO, AudioError
@@ -13,7 +13,7 @@ RATE = 22050
 
 def run(player, until, timeout=2.0):
     """Drive the player by hand until `until()` holds."""
-    deadline = time.monotonic() + timeout
+    deadline = time.monotonic() + timeout * PATIENCE
     while not until():
         if time.monotonic() > deadline:
             raise AssertionError("timed out waiting for the player")

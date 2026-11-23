@@ -14,4 +14,4 @@ flatpak-builder --user --force-clean --install-deps-from=flathub \
 # --runtime-repo lets the installer fetch the runtime the application needs.
 flatpak build-bundle --runtime-repo="$FLATHUB" repo "$OUTPUT" "$APP_ID"
 
-echo "Pronto: $(realpath "$OUTPUT")"
+echo "Done: $(realpath "$OUTPUT")"

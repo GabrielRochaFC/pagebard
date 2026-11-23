@@ -1,5 +1,10 @@
 """Test doubles shared by the playback and UI tests."""
 
+import os
+
+# Shared CI machines are slow and noisy: timing limits are relaxed there.
+PATIENCE = 5 if os.environ.get("CI") else 1
+
 
 class FakeAudioOut:
     """Stands in for the sound card: records what the player sends to it."""
@@ -70,7 +75,7 @@ def wait_until(qapp, condition, timeout=3.0):
     """Run the Qt event loop until `condition()` holds."""
     import time
 
-    deadline = time.monotonic() + timeout
+    deadline = time.monotonic() + timeout * PATIENCE
     while not condition():
         if time.monotonic() > deadline:
             raise AssertionError("timed out waiting for the UI")

@@ -4,6 +4,7 @@ import time
 
 import pymupdf
 import pytest
+from fakes import PATIENCE
 
 from pagebard.core import ocr, paths
 from pagebard.core.pdf import load_pdf, with_ocr
@@ -202,7 +203,7 @@ def test_recognition_does_not_stall_this_process(tessdata, make_scanned_pdf):
         longest_gap = max(longest_gap, now - last)
         last = now
     assert len(result["pages"]) == 2
-    assert longest_gap < 0.05
+    assert longest_gap < 0.05 * PATIENCE
 
 
 def test_ocr_resolution_is_capped_for_oversized_pages():

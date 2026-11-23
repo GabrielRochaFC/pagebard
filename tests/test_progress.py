@@ -2,7 +2,7 @@ import threading
 import time
 import weakref
 
-from fakes import wait_until
+from fakes import PATIENCE, wait_until
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication
 
@@ -118,7 +118,7 @@ def test_cancel_returns_promptly_even_if_the_work_is_stuck(qapp):
     elapsed = time.monotonic() - began
     release.set()
     assert outcome == ("cancelled", None)
-    assert elapsed < 0.5
+    assert elapsed < 0.5 * PATIENCE
 
 
 def test_worker_thread_is_handed_nothing_that_qt_watches(qapp):

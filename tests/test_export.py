@@ -129,3 +129,21 @@ def test_file_gets_ordinary_permissions(tmp_path):
     umask = os.umask(0)
     os.umask(umask)
     assert stat.S_IMODE(dest.stat().st_mode) == 0o666 & ~umask
+
+
+def test_folder_that_refuses_new_files_still_gets_the_mp3(tmp_path):
+    # What a sandboxed app sees when the user picked a file through the "save
+    # as" portal: that one file can be written, its folder accepts nothing else.
+    import os
+
+    folder = tmp_path / "portal"
+    folder.mkdir()
+    dest = folder / "x.mp3"
+    dest.write_bytes(b"")
+    folder.chmod(0o555)
+    try:
+        export_mp3(["a", "b"], speak, RATE, dest)
+        assert probe(dest)["streams"][0]["codec_name"] == "mp3"
+        assert os.listdir(folder) == ["x.mp3"]
+    finally:
+        folder.chmod(0o755)

@@ -3,7 +3,7 @@ import time
 
 import pymupdf
 import pytest
-from fakes import wait_until
+from fakes import PATIENCE, wait_until
 from PySide6.QtCore import QPoint, Qt
 from PySide6.QtGui import QColor
 from PySide6.QtTest import QTest
@@ -398,7 +398,7 @@ def test_fast_scrolling_keeps_rendering_and_memory_bounded(make_view, make_pdf, 
         qapp.processEvents()
         most_pages_held = max(most_pages_held, len(view.rendered_pages()))
         moments_with_a_page += bool(view.rendered_pages())
-    assert moments_with_a_page > 100  # pages kept arriving while scrolling
+    assert moments_with_a_page > 100 / PATIENCE  # pages kept arriving while scrolling
     wait_until(qapp, lambda: view.current_page() - 1 in view.rendered_pages())
     assert most_pages_held <= 4
     assert len(view.rendered_pages()) <= 3

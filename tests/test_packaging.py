@@ -71,7 +71,9 @@ def test_desktop_file():
     assert entries["Icon"] == APP_ID
     assert "application/pdf" in entries["MimeType"].split(";")
     assert entries["Terminal"] == "false"
-    assert "voz alta" in entries["Comment"]
+    assert "aloud" in entries["Comment"]  # English first, then the translations
+    assert "voz alta" in entries["Comment[pt_BR]"]
+    assert "voz alta" in entries["Comment[es]"]
     if shutil.which("desktop-file-validate"):
         result = subprocess.run(
             ["desktop-file-validate", str(packaged(".desktop"))], capture_output=True, text=True
@@ -92,8 +94,23 @@ def test_metainfo():
             capture_output=True, text=True,
         )  # fmt: skip
         problems = [line for line in result.stdout.splitlines() if line.startswith(("E:", "W:"))]
-        # The project has no website yet; that is the one accepted complaint.
-        assert [p for p in problems if "url-homepage-missing" not in p] == [], result.stdout
+        assert problems == [], result.stdout
+
+
+def test_metainfo_is_in_english_with_translations():
+    ns = "{http://www.w3.org/XML/1998/namespace}lang"
+    root = ET.parse(packaged(".metainfo.xml")).getroot()
+    summaries = {node.get(ns): node.text for node in root.findall("summary")}
+    assert set(summaries) == {None, "pt-BR", "es"}
+    assert "aloud" in summaries[None]
+    urls = {node.get("type"): node.text for node in root.findall("url")}
+    assert urls["homepage"] == "https://github.com/GabrielRochaFC/pagebard"
+    assert urls["bugtracker"].endswith("/issues")
+    images = [node.text for node in root.findall("screenshots/screenshot/image")]
+    assert len(images) == 3
+    for image in images:  # each one is a file in this repository
+        local = PACKAGING.parent.parent / image.split("/main/")[1]
+        assert local.is_file(), local
 
 
 def test_icon_is_an_svg():
