@@ -9,3 +9,4 @@ dist/
 .superpowers/
 packaging/flatpak/build-dir/
 packaging/flatpak/repo/
+website/_site/
