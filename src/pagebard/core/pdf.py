@@ -8,15 +8,18 @@ from pathlib import Path
 
 import pymupdf
 
+from pagebard.core.i18n import _
 from pagebard.core.errors import PagebardError
 
 MSG_NOT_FOUND = (
-    "Não foi possível abrir o arquivo. Verifique se ele ainda existe e se "
-    "você tem permissão para lê-lo."
+    _(
+        "The file could not be opened. Check that it still exists and that you are "
+        "allowed to read it."
+    )
 )
-MSG_INVALID = "Este arquivo não é um PDF válido ou está danificado."
+MSG_INVALID = _("This file is not a valid PDF, or it is damaged.")
 MSG_PASSWORD = (
-    "Este PDF é protegido por senha. Ainda não é possível abrir PDFs com senha."
+    _("This PDF is password-protected. Opening PDFs with a password is not supported yet.")
 )
 
 # (x0, y0, x1, y1) in PDF points, origin at the top-left of the displayed page.
@@ -106,7 +109,7 @@ def load_pdf(path: str | Path) -> PdfText:
     # A file that marks its line-break hyphens with soft hyphens tells them
     # apart from real ones, so there a plain "-" at a line end is a real hyphen.
     marks_soft_hyphens = any(
-        _SOFT_HYPHEN in entry[4] for raw, _ in raw_pages for entry in raw
+        _SOFT_HYPHEN in entry[4] for raw, _rotation in raw_pages for entry in raw
     )
     texts, words = [], []
     for raw, rotation in raw_pages:

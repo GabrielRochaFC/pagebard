@@ -5,9 +5,10 @@ import threading
 from pathlib import Path
 from typing import Any
 
+from pagebard.core.i18n import _
 from pagebard.core.errors import PagebardError
 
-MSG_TTS = "Não foi possível gerar a fala com esta voz. Tente baixar a voz novamente."
+MSG_TTS = _("This voice could not produce speech. Try downloading the voice again.")
 
 
 class TtsError(PagebardError):

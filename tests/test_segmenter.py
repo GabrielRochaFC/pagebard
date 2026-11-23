@@ -98,3 +98,16 @@ def test_single_letter_abbreviation_before_a_number():
         "Ela sabe quem ele é.",
         "Depois saiu.",
     ]
+
+
+def test_english_and_spanish_abbreviations():
+    assert texts("Mr. Smith met Mrs. Jones. They talked.") == [
+        "Mr. Smith met Mrs. Jones.",
+        "They talked.",
+    ]
+    assert texts("See e.g. Fig. 3 and St. Paul. Done.") == ["See e.g. Fig. 3 and St. Paul.", "Done."]
+    assert texts("La Srta. López y el Dr. Ruiz hablaron. Fin.") == [
+        "La Srta. López y el Dr. Ruiz hablaron.",
+        "Fin.",
+    ]
+    assert texts("El Sr. Pérez llegó. Sonrió.") == ["El Sr. Pérez llegó.", "Sonrió."]

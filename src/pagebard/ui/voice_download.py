@@ -5,6 +5,7 @@ from pathlib import Path
 
 from PySide6.QtWidgets import QWidget
 
+from pagebard.core.i18n import _
 from pagebard.core.voices import (
     DEFAULT_VOICE_KEY,
     DownloadCancelled,
@@ -29,13 +30,15 @@ def download_voice_with_progress(
         def progress(done: int, total: int) -> None:
             text = None
             if total > 0:
-                text = f"Baixando voz… {done // _MEGABYTE} de {total // _MEGABYTE} MB"
+                text = _("Downloading voice… {done} of {total} MB").format(
+                    done=done // _MEGABYTE, total=total // _MEGABYTE
+                )
             report(done, total, text)
 
         return download(key, voices_dir, progress=progress, cancel=cancel)
 
     status, voice = run_with_progress(
-        parent, "Baixando voz…", work, notify, cancelled=(DownloadCancelled,)
+        parent, _("Downloading voice…"), work, notify, cancelled=(DownloadCancelled,)
     )
     return voice if status == "done" else None
 

@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from pagebard.core.i18n import _, decimal, ngettext
 from pagebard.core import ocr, paths
 from pagebard.core.errors import PagebardError, user_message
 from pagebard.core.export import ExportCancelled, export_mp3
@@ -38,7 +39,12 @@ from pagebard.core.pdf import PdfText, load_pdf, with_ocr
 from pagebard.core.reading import Reading, build_reading
 from pagebard.core.segmenter import Sentence
 from pagebard.core.tts import Synthesizer
-from pagebard.core.voices import DEFAULT_VOICE_KEY, Voice, installed_voices
+from pagebard.core.voices import (
+    DEFAULT_VOICE_KEY,
+    PREFERRED_LANGUAGE,
+    Voice,
+    installed_voices,
+)
 from pagebard.playback.player import Player, PlayerState
 from pagebard.ui.messages import (
     APP_NAME,
@@ -56,28 +62,31 @@ from pagebard.ui.tasks import run_async
 from pagebard.ui.voice_download import download_default_voice
 from pagebard.ui.voice_manager import VoiceManagerDialog
 
-_HINT = "clique no texto para escolher onde começar; arraste para ler só um trecho"
+_HINT = _("click the text to choose where to start; drag to read only a passage")
 _SPEED_MIN, _SPEED_MAX, _SPEED_DEFAULT = 5, 20, 10  # tenths: 0,5× to 2,0×
 _SPEED_SETTLE_MS = 250  # wait for the slider to stop before re-synthesizing
 _POINTS_PER_PIXEL_AT_100 = 96 / 72  # zoom shown as 100% means 96 dpi
-_TEXT_SCALES = [("Normal", 1.0), ("Grande", 1.25), ("Muito grande", 1.5)]
+# Each language under its own name, whatever the language in use.
+_LANGUAGE_NAMES = [("en", "English"), ("es", "Español"), ("pt_BR", "Português (Brasil)")]
+_TEXT_SCALES = [(_("Normal"), 1.0), (_("Large"), 1.25), (_("Very large"), 1.5)]
 _MIN_SIZE = (760, 520)  # at the normal text size; grows with the text
 _VOICE_COMBO_WIDTH = 240
 # Keys that drive the reading even while a page-number field has the focus.
 _READING_KEYS = (Qt.Key.Key_Space, Qt.Key.Key_Plus, Qt.Key.Key_Minus, Qt.Key.Key_Equal)
 _ABOUT = (
-    "<b>Pagebard {version}</b><br>"
-    "Lê PDFs em voz alta, sem internet.<br><br>"
-    "Software livre, licença AGPL-3.0-or-later.<br>"
-    "Usa as vozes do Piper, o PyMuPDF (MuPDF e Tesseract) e o Qt."
+    _(
+        "<b>Pagebard {version}</b><br>Reads PDFs aloud, without internet.<br><br>Free "
+        "software, licensed AGPL-3.0-or-later.<br>Uses Piper voices, PyMuPDF (MuPDF "
+        "and Tesseract) and Qt."
+    )
 )
 # The size the interface font has before any scaling; found once per run,
 # because the scale is applied to the application font itself.
 _base_point_size: float | None = None
 _PLAY_TEXT = {
-    PlayerState.LOADING: "⏸ Pausar",
-    PlayerState.PLAYING: "⏸ Pausar",
-    PlayerState.PAUSED: "▶ Continuar",
+    PlayerState.LOADING: _("⏸ Pause"),
+    PlayerState.PLAYING: _("⏸ Pause"),
+    PlayerState.PAUSED: _("▶ Resume"),
 }
 _STYLE = """
 #header { border-bottom: 1px solid palette(mid); }
@@ -207,36 +216,36 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(*_MIN_SIZE)
         self.setStyleSheet(_STYLE)
 
-        self.open_button = QPushButton("Abrir PDF…")
-        self.open_button.setToolTip("Abrir um arquivo PDF (Ctrl+O)")
+        self.open_button = QPushButton(_("Open PDF…"))
+        self.open_button.setToolTip(_("Open a PDF file (Ctrl+O)"))
         self.open_button.clicked.connect(self._choose_file)
 
         self.play_button = QPushButton()
         self.play_button.setObjectName("playButton")
         self.play_button.setMinimumWidth(160)
-        self.play_button.setToolTip("Ler em voz alta ou pausar (Espaço)")
+        self.play_button.setToolTip(_("Read aloud or pause (Space)"))
         self.play_button.setEnabled(False)
         self.play_button.clicked.connect(self._on_play_clicked)
 
-        self.stop_button = QPushButton("⏹ Parar")
-        self.stop_button.setToolTip("Parar a leitura (Esc)")
+        self.stop_button = QPushButton(_("⏹ Stop"))
+        self.stop_button.setToolTip(_("Stop reading (Esc)"))
         self.stop_button.clicked.connect(self._player.stop)
 
-        self.export_button = QPushButton("Exportar MP3…")
-        self.export_button.setToolTip("Gravar a leitura das páginas escolhidas num arquivo MP3")
+        self.export_button = QPushButton(_("Export MP3…"))
+        self.export_button.setToolTip(_("Save the reading of the chosen pages as an MP3 file"))
         self.export_button.setEnabled(False)
         self.export_button.clicked.connect(self._export)
 
 
-        voice_label = QLabel("Voz:")
+        voice_label = QLabel(_("Voice:"))
         self.voice_combo = QComboBox()
         self.voice_combo.setMinimumWidth(_VOICE_COMBO_WIDTH)
-        self.voice_combo.setAccessibleName("Voz")
-        self.voice_combo.setToolTip("Voz usada na leitura")
+        self.voice_combo.setAccessibleName(_("Voice"))
+        self.voice_combo.setToolTip(_("Voice used for reading"))
         self.voice_combo.currentIndexChanged.connect(self._on_voice_changed)
         voice_label.setBuddy(self.voice_combo)
-        self.voices_button = QPushButton("Vozes…")
-        self.voices_button.setToolTip("Baixar ou remover vozes")
+        self.voices_button = QPushButton(_("Voices…"))
+        self.voices_button.setToolTip(_("Download or remove voices"))
         self.voices_button.clicked.connect(self._open_voice_manager)
 
         row1 = QHBoxLayout()
@@ -251,14 +260,14 @@ class MainWindow(QMainWindow):
         row1.addWidget(self.voice_combo)
         row1.addWidget(self.voices_button)
 
-        speed_title = QLabel("Velocidade:")
+        speed_title = QLabel(_("Speed:"))
         self.speed_slider = QSlider(Qt.Orientation.Horizontal)
         self.speed_slider.setRange(_SPEED_MIN, _SPEED_MAX)
         self.speed_slider.setValue(_SPEED_DEFAULT)
         self.speed_slider.setPageStep(1)
         self.speed_slider.setFixedWidth(150)
-        self.speed_slider.setAccessibleName("Velocidade")
-        self.speed_slider.setToolTip("Velocidade da leitura (teclas + e -)")
+        self.speed_slider.setAccessibleName(_("Speed"))
+        self.speed_slider.setToolTip(_("Reading speed (+ and - keys)"))
         self.speed_slider.valueChanged.connect(self._on_speed_changed)
         speed_title.setBuddy(self.speed_slider)
         self.speed_label = QLabel()
@@ -275,13 +284,13 @@ class MainWindow(QMainWindow):
         self._row2.addWidget(self.speed_label)
         self._on_speed_changed(self.speed_slider.value())
 
-        pages_title = QLabel("Páginas:")
+        pages_title = QLabel(_("Pages:"))
         self.first_page_spin = QSpinBox()
-        self.first_page_spin.setAccessibleName("Primeira página a ler")
-        self.first_page_spin.setToolTip("Primeira página a ler")
+        self.first_page_spin.setAccessibleName(_("First page to read"))
+        self.first_page_spin.setToolTip(_("First page to read"))
         self.last_page_spin = QSpinBox()
-        self.last_page_spin.setAccessibleName("Última página a ler")
-        self.last_page_spin.setToolTip("Última página a ler")
+        self.last_page_spin.setAccessibleName(_("Last page to read"))
+        self.last_page_spin.setToolTip(_("Last page to read"))
         for spin in (self.first_page_spin, self.last_page_spin):
             spin.setMinimumWidth(64)
             # Apply a typed number when it is complete (Enter or leaving the
@@ -299,16 +308,16 @@ class MainWindow(QMainWindow):
         self._row2.addStretch(1)
 
         self.zoom_out_button = QPushButton("−")
-        self.zoom_out_button.setToolTip("Diminuir a página (Ctrl+-)")
-        self.zoom_out_button.setAccessibleName("Diminuir a página")
+        self.zoom_out_button.setToolTip(_("Zoom out (Ctrl+-)"))
+        self.zoom_out_button.setAccessibleName(_("Zoom out"))
         self.zoom_in_button = QPushButton("+")
-        self.zoom_in_button.setToolTip("Aumentar a página (Ctrl++)")
-        self.zoom_in_button.setAccessibleName("Aumentar a página")
+        self.zoom_in_button.setToolTip(_("Zoom in (Ctrl++)"))
+        self.zoom_in_button.setAccessibleName(_("Zoom in"))
         self.zoom_label = QLabel()
         self.zoom_label.setMinimumWidth(44)
         self.zoom_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.fit_button = QPushButton("Ajustar à largura")
-        self.fit_button.setToolTip("Ajustar a página à largura da janela (Ctrl+0)")
+        self.fit_button = QPushButton(_("Fit width"))
+        self.fit_button.setToolTip(_("Fit the page to the window width (Ctrl+0)"))
         self._row2.addWidget(self.zoom_out_button)
         self._row2.addWidget(self.zoom_label)
         self._row2.addWidget(self.zoom_in_button)
@@ -356,44 +365,44 @@ class MainWindow(QMainWindow):
         Space belongs to a window action and not to the button: a focused
         button would also "click" on the key release and toggle twice.
         """
-        self.open_action = self._action("Abrir PDF…", self._choose_file, "Ctrl+O")
-        self.export_action = self._action("Exportar MP3…", self._export, "Ctrl+E")
-        self.ocr_action = self._action("Reconhecer texto (OCR)…", self._run_ocr)
-        self.quit_action = self._action("Sair", self.close, "Ctrl+Q")
+        self.open_action = self._action(_("Open PDF…"), self._choose_file, "Ctrl+O")
+        self.export_action = self._action(_("Export MP3…"), self._export, "Ctrl+E")
+        self.ocr_action = self._action(_("Recognize text (OCR)…"), self._run_ocr)
+        self.quit_action = self._action(_("Quit"), self.close, "Ctrl+Q")
         self.play_action = self._action(
-            "Reproduzir / Pausar", self._on_space, "Space", repeat=False
+            _("Play / Pause"), self._on_space, "Space", repeat=False
         )
-        self.stop_action = self._action("Parar", self._on_escape, "Esc", repeat=False)
-        self.faster_action = self._action("Mais rápido", lambda: self._nudge_speed(1), "+", "=")
-        self.slower_action = self._action("Mais devagar", lambda: self._nudge_speed(-1), "-")
-        self.voices_action = self._action("Vozes…", self._open_voice_manager)
+        self.stop_action = self._action(_("Stop"), self._on_escape, "Esc", repeat=False)
+        self.faster_action = self._action(_("Faster"), lambda: self._nudge_speed(1), "+", "=")
+        self.slower_action = self._action(_("Slower"), lambda: self._nudge_speed(-1), "-")
+        self.voices_action = self._action(_("Voices…"), self._open_voice_manager)
         self.zoom_in_action = self._action(
-            "Aumentar página", self.pdf_view.zoom_in, "Ctrl++", "Ctrl+="
+            _("Zoom in page"), self.pdf_view.zoom_in, "Ctrl++", "Ctrl+="
         )
-        self.zoom_out_action = self._action("Diminuir página", self.pdf_view.zoom_out, "Ctrl+-")
-        self.fit_action = self._action("Ajustar à largura", self._fit_width, "Ctrl+0")
+        self.zoom_out_action = self._action(_("Zoom out page"), self.pdf_view.zoom_out, "Ctrl+-")
+        self.fit_action = self._action(_("Fit width"), self._fit_width, "Ctrl+0")
         self.shortcuts_action = self._action(
-            "Atalhos de teclado", lambda: show_shortcuts(self), "F1"
+            _("Keyboard shortcuts"), lambda: show_shortcuts(self), "F1"
         )
-        self.about_action = self._action("Sobre o Pagebard", self._show_about)
+        self.about_action = self._action(_("About Pagebard"), self._show_about)
         for action in (self.export_action, self.ocr_action):
             action.setEnabled(False)
 
         bar = self.menuBar()
-        file_menu = bar.addMenu("&Arquivo")
+        file_menu = bar.addMenu(_("&File"))
         file_menu.addActions([self.open_action, self.export_action, self.ocr_action])
         file_menu.addSeparator()
         file_menu.addAction(self.quit_action)
-        reading_menu = bar.addMenu("&Leitura")
+        reading_menu = bar.addMenu(_("&Reading"))
         reading_menu.addActions([self.play_action, self.stop_action])
         reading_menu.addSeparator()
         reading_menu.addActions([self.faster_action, self.slower_action])
         reading_menu.addSeparator()
         reading_menu.addAction(self.voices_action)
-        view_menu = bar.addMenu("&Exibir")
+        view_menu = bar.addMenu(_("&View"))
         view_menu.addActions([self.zoom_in_action, self.zoom_out_action, self.fit_action])
         view_menu.addSeparator()
-        text_menu = view_menu.addMenu("Texto da interface")
+        text_menu = view_menu.addMenu(_("Interface text size"))
         group = QActionGroup(self)
         self.text_scale_actions: list[QAction] = []
         for label, scale in _TEXT_SCALES:
@@ -403,13 +412,33 @@ class MainWindow(QMainWindow):
             group.addAction(action)
             text_menu.addAction(action)
             self.text_scale_actions.append(action)
-        help_menu = bar.addMenu("A&juda")
+        language_menu = view_menu.addMenu(_("Language"))
+        language_group = QActionGroup(self)
+        saved = self._recall("language")
+        choices = [("auto", _("Automatic (system)"))] + _LANGUAGE_NAMES
+        current = saved if saved in [code for code, _name in _LANGUAGE_NAMES] else "auto"
+        self.language_actions: list[QAction] = []
+        for code, name in choices:
+            action = QAction(name, self, checkable=True)
+            action.setChecked(code == current)
+            action.triggered.connect(lambda _checked, code=code: self._choose_language(code))
+            language_group.addAction(action)
+            language_menu.addAction(action)
+            self.language_actions.append(action)
+        help_menu = bar.addMenu(_("&Help"))
         help_menu.addActions([self.shortcuts_action, self.about_action])
+
+    def _choose_language(self, code: str) -> None:
+        """Remember the language; texts are built at start-up, so it applies next time."""
+        self._remember("language", code)
+        QMessageBox.information(
+            self, APP_NAME, _("Restart Pagebard to use the new language.")
+        )
 
     def _show_about(self) -> None:
         from pagebard import __version__
 
-        QMessageBox.about(self, "Sobre o Pagebard", _ABOUT.format(version=__version__))
+        QMessageBox.about(self, _("About Pagebard"), _ABOUT.format(version=__version__))
 
     # ---- preferences ---------------------------------------------------------
 
@@ -419,7 +448,7 @@ class MainWindow(QMainWindow):
 
     def set_text_scale(self, scale: float) -> None:
         """Size of the interface text: 1.0, 1.25 or 1.5 times the usual."""
-        if scale not in [value for _, value in _TEXT_SCALES]:
+        if scale not in [value for _label, value in _TEXT_SCALES]:
             return
         self._text_scale = scale
         font = QApplication.font()
@@ -431,7 +460,7 @@ class MainWindow(QMainWindow):
         # Bigger text needs more room: do not let the header be squeezed.
         self.setMinimumSize(round(_MIN_SIZE[0] * scale), round(_MIN_SIZE[1] * scale))
         self.voice_combo.setMinimumWidth(round(_VOICE_COMBO_WIDTH * scale))
-        for action, (_, value) in zip(self.text_scale_actions, _TEXT_SCALES):
+        for action, (_label, value) in zip(self.text_scale_actions, _TEXT_SCALES):
             action.setChecked(value == scale)
         self._remember("text_scale", scale)
 
@@ -462,11 +491,11 @@ class MainWindow(QMainWindow):
     # ---- opening a document ------------------------------------------------
 
     def _choose_file(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(
+        path, _filter = QFileDialog.getOpenFileName(
             self,
-            "Abrir PDF",
+            _("Open PDF"),
             self._last_dir,
-            "Documentos PDF (*.pdf);;Todos os arquivos (*)",
+            _("PDF documents (*.pdf);;All files (*)"),
         )
         if path:
             self.open_path(path)
@@ -479,7 +508,7 @@ class MainWindow(QMainWindow):
         self._remember("last_dir", self._last_dir)
         self._load_id += 1
         load_id = self._load_id
-        self.statusBar().showMessage("Abrindo PDF…")
+        self.statusBar().showMessage(_("Opening PDF…"))
         run_async(
             lambda: _load(path),
             lambda loaded: self._on_loaded(load_id, *loaded),
@@ -519,13 +548,16 @@ class MainWindow(QMainWindow):
         self.export_action.setEnabled(bool(reading.sentences))
         self.ocr_action.setEnabled(bool(doc.scanned_pages))
         count = reading.page_count
-        self._doc_status = f"{doc.path.name} — {count} página{'' if count == 1 else 's'}"
+        self._doc_status = ngettext(
+            "{name} — {count} page", "{name} — {count} pages", count
+        ).format(name=doc.path.name, count=count)
         scanned = len(doc.scanned_pages)
         if reading.sentences and scanned:
-            self._doc_status += (
-                f" · {scanned} página{'' if scanned == 1 else 's'} sem texto: "
-                "use Arquivo → Reconhecer texto (OCR)"
-            )
+            self._doc_status += " · " + ngettext(
+                "{count} page without text: use File → Recognize text (OCR)",
+                "{count} pages without text: use File → Recognize text (OCR)",
+                scanned,
+            ).format(count=scanned)
         elif reading.sentences:
             self._doc_status += f" · {_HINT}"
         self.statusBar().showMessage(self._doc_status)
@@ -548,7 +580,9 @@ class MainWindow(QMainWindow):
             return
         self._player.stop()
         voice = self.voice_combo.currentData()
-        language = ocr.language_for(voice.language if voice is not None else "pt_BR")
+        language = ocr.language_for(
+            voice.language if voice is not None else PREFERRED_LANGUAGE
+        )
         # Everything the worker threads touch is plain: no widgets, no self.
         tessdata, pages, path = self._tessdata_dir, list(doc.scanned_pages), doc.path
         downloader, recognizer = self._ocr_downloader, self._recognizer
@@ -559,15 +593,16 @@ class MainWindow(QMainWindow):
             def fetch(report, cancel):
                 downloader(language, tessdata, progress=report, cancel=cancel)
 
-            status, _ = run_with_progress(
-                self, "Baixando dados de reconhecimento…", fetch, self._notify, cancelled
+            status, _nothing = run_with_progress(
+                self, _("Downloading recognition data…"), fetch, self._notify, cancelled
             )
             if status != "done":
                 return
 
         def work(report, cancel):
             def progress(done: int, total: int) -> None:
-                report(done, total, f"Reconhecendo texto… página {done} de {total}")
+                text = _("Recognizing text… page {done} of {total}")
+                report(done, total, text.format(done=done, total=total))
 
             recognized = recognizer(
                 path, pages, language, tessdata, progress=progress, cancel=cancel
@@ -576,7 +611,7 @@ class MainWindow(QMainWindow):
             return updated, build_reading(updated)
 
         status, result = run_with_progress(
-            self, "Reconhecendo texto…", work, self._notify, cancelled
+            self, _("Recognizing text…"), work, self._notify, cancelled
         )
         if status != "done" or self._doc is not doc:
             return  # cancelled, failed, or another document took over meanwhile
@@ -587,7 +622,9 @@ class MainWindow(QMainWindow):
             return
         self._show_document(updated, reading, fresh=False)
         self.statusBar().showMessage(
-            f"Texto reconhecido em {found} página{'' if found == 1 else 's'}."
+            ngettext(
+                "Text recognized on {count} page.", "Text recognized on {count} pages.", found
+            ).format(count=found)
         )
 
     def _on_load_failed(self, load_id: int, exc: Exception) -> None:
@@ -601,7 +638,9 @@ class MainWindow(QMainWindow):
         if self._reading is None or page == 0:
             self.page_label.setText("")
         else:
-            self.page_label.setText(f"Página {page} de {self._reading.page_count}")
+            self.page_label.setText(
+                _("Page {page} of {count}").format(page=page, count=self._reading.page_count)
+            )
 
     # ---- page range, zoom, drag and drop ---------------------------------------
 
@@ -802,12 +841,12 @@ class MainWindow(QMainWindow):
         """Menu for a right click on that word (-1: not on a word)."""
         menu = QMenu(self)
         if word >= 0:
-            menu.addAction("Ler a partir daqui").triggered.connect(
+            menu.addAction(_("Read from here")).triggered.connect(
                 lambda: self._read_from_word(word)
             )
         if self.pdf_view.selection() is not None:
-            menu.addAction("Ler seleção").triggered.connect(self._start_reading)
-            menu.addAction("Copiar").triggered.connect(self._copy_selection)
+            menu.addAction(_("Read selection")).triggered.connect(self._start_reading)
+            menu.addAction(_("Copy")).triggered.connect(self._copy_selection)
         return menu
 
     def _read_from_word(self, word: int) -> None:
@@ -822,7 +861,7 @@ class MainWindow(QMainWindow):
     # ---- speed ---------------------------------------------------------------------
 
     def _on_speed_changed(self, value: int) -> None:
-        self.speed_label.setText(f"{value / 10:.1f}×".replace(".", ","))
+        self.speed_label.setText(f"{decimal(value / 10)}×")
         self._length_scale = 10 / value
         self._remember("speed", value)
         if self._speech is not None:
@@ -881,11 +920,11 @@ class MainWindow(QMainWindow):
         if ready is None:
             return
         speech, sample_rate = ready
-        chosen, _ = QFileDialog.getSaveFileName(
+        chosen, _filter = QFileDialog.getSaveFileName(
             self,
-            "Exportar para MP3",
+            _("Export to MP3"),
             str(self._doc_path.with_suffix(".mp3")),
-            "Áudio MP3 (*.mp3)",
+            _("MP3 audio (*.mp3)"),
         )
         if not chosen:
             return
@@ -893,7 +932,8 @@ class MainWindow(QMainWindow):
         if dest.suffix.lower() != ".mp3":
             dest = dest.with_name(dest.name + ".mp3")
             # The dialog checked the name as typed, not this one.
-            if dest.exists() and not self._ask(f"O arquivo {dest.name} já existe. Substituir?"):
+            question = _("The file {name} already exists. Replace it?")
+            if dest.exists() and not self._ask(question.format(name=dest.name)):
                 return
 
         # Everything the worker thread touches is plain: no widgets, no self.
@@ -903,20 +943,21 @@ class MainWindow(QMainWindow):
 
         def work(report, cancel):
             def progress(done: int, total: int) -> None:
-                report(done, total, f"Exportando para MP3… frase {done} de {total}")
+                text = _("Exporting to MP3… sentence {done} of {total}")
+                report(done, total, text.format(done=done, total=total))
 
             exporter(
                 texts, voice.speak, sample_rate, dest,
                 progress=progress, cancel=cancel, title=title,
             )  # fmt: skip
 
-        status, _ = run_with_progress(
-            self, "Exportando para MP3…", work, self._notify, cancelled=(ExportCancelled,)
+        status, _nothing = run_with_progress(
+            self, _("Exporting to MP3…"), work, self._notify, cancelled=(ExportCancelled,)
         )
         if status == "done":
-            self.statusBar().showMessage(f"MP3 gravado em {dest}")
+            self.statusBar().showMessage(_("MP3 saved to {path}").format(path=dest))
         elif status == "cancelled":
-            self.statusBar().showMessage("Exportação cancelada.")
+            self.statusBar().showMessage(_("Export cancelled."))
 
     def _on_sentence_started(self, index: int) -> None:
         if self._reading is None or index >= len(self._playing):
@@ -925,7 +966,9 @@ class MainWindow(QMainWindow):
         self.pdf_view.set_reading_highlight(sentence.start, sentence.end)
         self.pdf_view.scroll_to(sentence.start, sentence.end)
         page = self._reading.page_of(sentence.start) + 1
-        self._reading_status = f"Lendo — página {page} de {self._reading.page_count}"
+        self._reading_status = _("Reading — page {page} of {count}").format(
+            page=page, count=self._reading.page_count
+        )
         if self._player.state is PlayerState.PLAYING:
             self.statusBar().showMessage(self._reading_status)
 
@@ -936,11 +979,11 @@ class MainWindow(QMainWindow):
             self._reading_status = ""
             message = self._doc_status
         elif state is PlayerState.PAUSED:
-            message = "Pausado"
+            message = _("Paused")
         elif state is PlayerState.LOADING:
-            message = "Preparando a voz…"
+            message = _("Preparing the voice…")
         else:
-            message = self._reading_status or "Lendo…"
+            message = self._reading_status or _("Reading…")
         self.statusBar().showMessage(message)
 
     def _show_state(self, state: PlayerState) -> None:
@@ -949,13 +992,13 @@ class MainWindow(QMainWindow):
 
     def _idle_play_text(self) -> str:
         if self.pdf_view.selection() is not None:
-            return "▶ Ler seleção"
+            return _("▶ Read selection")
         if self._start_sentence is not None:
-            return "▶ Ler daqui"
-        return "▶ Reproduzir"
+            return _("▶ Read from here")
+        return _("▶ Play")
 
     def _on_finished(self) -> None:
-        self.statusBar().showMessage("Leitura concluída.")
+        self.statusBar().showMessage(_("Reading finished."))
 
     def eventFilter(self, watched, event) -> bool:
         """Let Space, + and - reach the reading while a page field has focus.
@@ -998,7 +1041,7 @@ def _first_local_file(event: QDropEvent) -> str | None:
 
 
 def _preferred_index(voices: list[Voice], select_key: str | None) -> int:
-    """Requested voice, else the default one, else any pt_BR voice, else the first."""
+    """Requested voice, else the default, else one in the preferred language, else the first."""
     if not voices:
         return -1
     keys = [voice.key for voice in voices]
@@ -1006,6 +1049,6 @@ def _preferred_index(voices: list[Voice], select_key: str | None) -> int:
         if wanted in keys:
             return keys.index(wanted)
     for index, voice in enumerate(voices):
-        if voice.language == "pt_BR":
+        if voice.language == PREFERRED_LANGUAGE:
             return index
     return 0

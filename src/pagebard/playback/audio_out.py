@@ -6,11 +6,11 @@ from typing import Protocol
 
 from PySide6.QtMultimedia import QAudioFormat, QAudioSink, QMediaDevices, QtAudio
 
+from pagebard.core.i18n import _
 from pagebard.core.errors import PagebardError
 
 MSG_NO_AUDIO = (
-    "Nenhuma saída de áudio foi encontrada. Conecte alto-falantes ou fones "
-    "de ouvido e tente novamente."
+    _("No audio output was found. Connect speakers or headphones and try again.")
 )
 
 _BYTES_PER_SAMPLE = 2  # 16-bit

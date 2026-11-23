@@ -18,6 +18,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import QAbstractScrollArea, QApplication, QWidget
 
+from pagebard.core.i18n import _
 from pagebard.core.pdf import Rect
 from pagebard.core.reading import Reading
 from pagebard.ui.page_renderer import PageRenderer
@@ -31,7 +32,7 @@ _POLL_MS = 15
 _READING_COLOR = QColor("#FFE08A")
 _SELECTION_COLOR = QColor(56, 132, 255, 90)
 _MARKER_COLOR = QColor("#2563EB")
-_EMPTY_HINT = "Abra um PDF (Ctrl+O) ou arraste o arquivo para cá"
+_EMPTY_HINT = _("Open a PDF (Ctrl+O) or drag the file here")
 
 Range = tuple[int, int]
 
@@ -74,7 +75,7 @@ class PdfView(QAbstractScrollArea):
 
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        self.setAccessibleName("Páginas do documento")
+        self.setAccessibleName(_("Document pages"))
         self.viewport().setMouseTracking(True)
         self.verticalScrollBar().setSingleStep(40)
         self.horizontalScrollBar().setSingleStep(40)
@@ -257,7 +258,7 @@ class PdfView(QAbstractScrollArea):
 
     def _relayout(self) -> None:
         if self._reading is not None and self._fit_width:
-            widest = max(width for width, _ in self._reading.page_sizes)
+            widest = max(width for width, _height in self._reading.page_sizes)
             fitted = (self.viewport().width() - 2 * _GAP) / widest
             self._apply_zoom(min(max(fitted, _MIN_ZOOM), _FIT_MAX_ZOOM))
         else:
@@ -273,7 +274,7 @@ class PdfView(QAbstractScrollArea):
                 self._sizes.append(size)
                 y += size[1] + _GAP
         self._content_height = y if self._sizes else 0
-        self._content_width = max((w for w, _ in self._sizes), default=0) + 2 * _GAP
+        self._content_width = max((width for width, _height in self._sizes), default=0) + 2 * _GAP
         viewport = self.viewport()
         vertical, horizontal = self.verticalScrollBar(), self.horizontalScrollBar()
         vertical.setPageStep(viewport.height())

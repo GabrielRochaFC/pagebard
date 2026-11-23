@@ -10,9 +10,14 @@ _PARAGRAPH_BREAK = re.compile(r"\n\s*\n")
 _SENTENCE_END = re.compile(r"""[.!?…]+["'”’)\]»]*(?=\s)""")
 _OPENERS = "\"'“‘([«—"
 _SOFT_BREAKS = ",;:"
+# Words that end in a period without ending the sentence, in the languages the
+# program is most used with (Portuguese, English, Spanish). Only ones that are
+# rarely the last word of a sentence: "no." would be wrong more often than right.
 _ABBREVIATIONS = frozenset(
     "sr sra srta dr dra prof profa av art cap ed etc ex fig nº núm pág pp tel "
-    "vol vs exmo ltda cia".split()
+    "vol vs exmo ltda cia "
+    "mr mrs ms jr st mt e.g i.e approx dept "
+    "sres ud uds dña".split()
 )
 
 

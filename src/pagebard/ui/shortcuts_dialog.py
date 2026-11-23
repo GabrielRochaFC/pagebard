@@ -11,39 +11,40 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from pagebard.core.i18n import _
 from pagebard.ui.messages import APP_NAME
 
 SHORTCUTS = [
-    ("Ctrl+O", "Abrir um PDF"),
-    ("Ctrl+E", "Exportar a leitura para MP3"),
-    ("Ctrl+Q", "Sair"),
-    ("Espaço", "Reproduzir, pausar ou continuar a leitura"),
-    ("Esc", "Parar a leitura; parado, limpa a seleção e o ponto de início"),
-    ("+ ou =", "Leitura mais rápida"),
-    ("-", "Leitura mais devagar"),
-    ("Ctrl++", "Aumentar a página"),
-    ("Ctrl+-", "Diminuir a página"),
-    ("Ctrl+0", "Ajustar a página à largura da janela"),
-    ("Ctrl+C", "Copiar o trecho selecionado"),
-    ("Page Up / Page Down", "Rolar uma tela para cima ou para baixo"),
-    ("Home / End", "Ir ao começo ou ao fim do documento"),
-    ("F1", "Mostrar esta lista"),
-    ("Clique numa palavra", "Começar a leitura daquele ponto"),
-    ("Duplo clique numa palavra", "Ler a partir dali imediatamente"),
-    ("Arrastar sobre o texto", "Selecionar um trecho para ler só ele"),
-    ("Botão direito", "Menu com Ler a partir daqui, Ler seleção e Copiar"),
-    ("Ctrl + roda do mouse", "Aumentar ou diminuir a página"),
+    ("Ctrl+O", _("Open a PDF")),
+    ("Ctrl+E", _("Export the reading to MP3")),
+    ("Ctrl+Q", _("Quit")),
+    (_("Space"), _("Play, pause or resume reading")),
+    ("Esc", _("Stop reading; when stopped, clears the selection and the starting point")),
+    (_("+ or ="), _("Read faster")),
+    ("-", _("Read slower")),
+    ("Ctrl++", _("Zoom in")),
+    ("Ctrl+-", _("Zoom out")),
+    ("Ctrl+0", _("Fit the page to the window width")),
+    ("Ctrl+C", _("Copy the selected passage")),
+    ("Page Up / Page Down", _("Scroll one screen up or down")),
+    ("Home / End", _("Go to the start or the end of the document")),
+    ("F1", _("Show this list")),
+    (_("Click a word"), _("Start reading from that point")),
+    (_("Double-click a word"), _("Read from there right away")),
+    (_("Drag over the text"), _("Select a passage to read only that")),
+    (_("Right click"), _("Menu with Read from here, Read selection and Copy")),
+    (_("Ctrl + mouse wheel"), _("Zoom the page in or out")),
 ]
 
 
 class ShortcutsDialog(QDialog):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setWindowTitle(f"Atalhos de teclado — {APP_NAME}")
+        self.setWindowTitle(_("Keyboard shortcuts — {app}").format(app=APP_NAME))
         self.resize(720, 620)
         self._table = QTableWidget(len(SHORTCUTS), 2)
-        self._table.setHorizontalHeaderLabels(["Tecla ou gesto", "O que faz"])
-        self._table.setAccessibleName("Atalhos de teclado")
+        self._table.setHorizontalHeaderLabels([_("Key or gesture"), _("What it does")])
+        self._table.setAccessibleName(_("Keyboard shortcuts"))
         self._table.verticalHeader().setVisible(False)
         self._table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)

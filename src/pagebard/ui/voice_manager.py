@@ -20,8 +20,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from pagebard.core.i18n import _
 from pagebard.core.errors import user_message
 from pagebard.core.voices import (
+    PREFERRED_LANGUAGE,
     CatalogVoice,
     Voice,
     download_voice,
@@ -36,9 +38,9 @@ from pagebard.ui.messages import APP_NAME, show_error
 from pagebard.ui.tasks import run_async
 from pagebard.ui.voice_download import download_voice_with_progress
 
-_LOADING = "Carregando lista de vozes…"
-_ALL_LANGUAGES = "Todos os idiomas"
-_HEADERS = ["Voz", "Idioma", "Qualidade", "Tamanho", "Situação"]
+_LOADING = _("Loading the list of voices…")
+_ALL_LANGUAGES = _("All languages")
+_HEADERS = [_("Voice"), _("Language"), _("Quality"), _("Size"), _("Status")]
 _MEGABYTE = 1_000_000
 
 
@@ -70,18 +72,18 @@ class VoiceManagerDialog(QDialog):
         self._notify = notify or (lambda text: show_error(self, text))
         self._catalog: list[CatalogVoice] = []
 
-        self.setWindowTitle(f"Vozes — {APP_NAME}")
+        self.setWindowTitle(_("Voices — {app}").format(app=APP_NAME))
         self.resize(720, 460)
 
-        language_title = QLabel("Idioma:")
+        language_title = QLabel(_("Language:"))
         self.language_combo = QComboBox()
-        self.language_combo.setAccessibleName("Idioma")
+        self.language_combo.setAccessibleName(_("Language"))
         self.language_combo.currentIndexChanged.connect(self._fill_table)
         language_title.setBuddy(self.language_combo)
 
         self.table = QTableWidget(0, len(_HEADERS))
         self.table.setHorizontalHeaderLabels(_HEADERS)
-        self.table.setAccessibleName("Vozes")
+        self.table.setAccessibleName(_("Voices"))
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -93,11 +95,11 @@ class VoiceManagerDialog(QDialog):
 
         self.status_label = QLabel(_LOADING)
         self.status_label.setWordWrap(True)
-        self.download_button = QPushButton("Baixar")
+        self.download_button = QPushButton(_("Download"))
         self.download_button.clicked.connect(self._download_selected)
-        self.remove_button = QPushButton("Remover")
+        self.remove_button = QPushButton(_("Remove"))
         self.remove_button.clicked.connect(self._remove_selected)
-        close_button = QPushButton("Fechar")
+        close_button = QPushButton(_("Close"))
         close_button.clicked.connect(self.accept)
 
         top = QHBoxLayout()
@@ -123,7 +125,7 @@ class VoiceManagerDialog(QDialog):
     def _on_catalog(self, catalog: list[CatalogVoice]) -> None:
         self._catalog = catalog
         self.status_label.setText("")
-        self._refresh(prefer_portuguese=True)
+        self._refresh(prefer_own_language=True)
 
     def _on_catalog_failed(self, exc: Exception) -> None:
         self.status_label.setText(user_message(exc))
@@ -150,7 +152,7 @@ class VoiceManagerDialog(QDialog):
             rows.append(_Row(key, label, _pretty(name), language, quality, "—", True))
         return rows
 
-    def _refresh(self, prefer_portuguese: bool = False) -> None:
+    def _refresh(self, prefer_own_language: bool = False) -> None:
         """Rebuild the language list and the table, keeping the choices made."""
         rows = self._rows()
         chosen = self.language_combo.currentData()
@@ -158,8 +160,8 @@ class VoiceManagerDialog(QDialog):
         for row in rows:
             if row.language not in languages:
                 languages.append(row.language)
-        if prefer_portuguese or self.language_combo.count() == 0:
-            chosen = "pt_BR" if "pt_BR" in languages else None
+        if prefer_own_language or self.language_combo.count() == 0:
+            chosen = PREFERRED_LANGUAGE if PREFERRED_LANGUAGE in languages else None
         self.language_combo.blockSignals(True)
         self.language_combo.clear()
         self.language_combo.addItem(_ALL_LANGUAGES, None)
@@ -181,7 +183,7 @@ class VoiceManagerDialog(QDialog):
                 language_label(row.language),
                 quality_label(row.quality),
                 row.size,
-                "Instalada" if row.installed else "Disponível",
+                _("Installed") if row.installed else _("Available"),
             ]
             for column, text in enumerate(cells):
                 item = QTableWidgetItem(text)
@@ -231,7 +233,11 @@ class VoiceManagerDialog(QDialog):
         label = item.data(Qt.ItemDataRole.UserRole + 2)
         yes = QMessageBox.StandardButton.Yes
         answer = QMessageBox.question(
-            self, APP_NAME, f"Remover a voz {label}?", yes | QMessageBox.StandardButton.No, yes
+            self,
+            APP_NAME,
+            _("Remove the voice {voice}?").format(voice=label),
+            yes | QMessageBox.StandardButton.No,
+            yes,
         )
         if answer != yes:
             return

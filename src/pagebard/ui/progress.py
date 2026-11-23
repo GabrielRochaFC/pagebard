@@ -8,6 +8,7 @@ from typing import Any
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import QProgressDialog, QWidget
 
+from pagebard.core.i18n import _
 from pagebard.core.errors import user_message
 from pagebard.ui.messages import APP_NAME, show_error
 
@@ -34,7 +35,7 @@ def run_with_progress(
     Returns ("done", result), ("cancelled", None) or ("failed", None); a failure
     has already been shown to the user through `notify` when this returns.
     """
-    dialog = QProgressDialog(label, "Cancelar", 0, 100, parent)
+    dialog = QProgressDialog(label, _("Cancel"), 0, 100, parent)
     dialog.setWindowTitle(APP_NAME)
     dialog.setWindowModality(Qt.WindowModality.WindowModal)
     dialog.setMinimumDuration(0)

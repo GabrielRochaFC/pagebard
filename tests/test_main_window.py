@@ -1510,6 +1510,7 @@ def test_menu_bar_has_every_action(window):
             "Diminuir página",
             "Ajustar à largura",
             "Texto da interface",
+            "Idioma",
         ],
         "A&juda": ["Atalhos de teclado", "Sobre o Pagebard"],
     }
@@ -1753,3 +1754,37 @@ def test_export_does_not_ask_again_when_the_dialog_already_did(
     window.export_button.click()
     assert questions["texts"] == []
     assert len(exporter.calls) == 1
+
+
+def test_language_menu_saves_the_choice_and_asks_for_a_restart(make_window, prefs, monkeypatch):
+    from pagebard.app import choose_language
+    from pagebard.core import i18n
+
+    told = []
+    monkeypatch.setattr(
+        QMessageBox, "information", lambda parent, title, text: told.append(text)
+    )
+    window = make_window(settings=prefs)
+    actions = {action.text(): action for action in window.language_actions}
+    assert list(actions) == ["Automático (sistema)", "English", "Español", "Português (Brasil)"]
+    assert actions["Automático (sistema)"].isChecked()
+
+    actions["English"].trigger()
+    assert prefs.value("language") == "en"
+    assert told == ["Reinicie o Pagebard para usar o novo idioma."]
+    assert window.play_button.text() == PLAY  # nothing changes until the restart
+    try:
+        assert choose_language(prefs) == "en"  # what the next start will do
+    finally:
+        i18n.set_language("pt_BR")
+
+    again = make_window(settings=prefs)
+    checked = [action.text() for action in again.language_actions if action.isChecked()]
+    assert checked == ["English"]
+
+    actions["Automático (sistema)"].trigger()
+    assert prefs.value("language") == "auto"
+    try:
+        assert choose_language(prefs) == "pt_BR"  # falls back to the environment
+    finally:
+        i18n.set_language("pt_BR")

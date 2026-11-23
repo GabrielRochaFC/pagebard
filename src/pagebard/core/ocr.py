@@ -7,19 +7,23 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
+from pagebard.core.i18n import _, language
 from pagebard.core.download import DownloadCancelled, discard, fetch_to_temp, open_url
 from pagebard.core.errors import PagebardError
 from pagebard.core.worker_client import WorkerProcess
 
 TESSDATA_BASE = "https://github.com/tesseract-ocr/tessdata_fast/raw/main"
 MSG_OCR_DATA = (
-    "Não foi possível baixar os dados de reconhecimento de texto. Verifique sua "
-    "conexão com a internet e tente novamente."
+    _(
+        "The text recognition data could not be downloaded. Check your internet "
+        "connection and try again."
+    )
 )
-MSG_OCR = "Não foi possível reconhecer o texto deste PDF."
+MSG_OCR = _("The text of this PDF could not be recognized.")
 
 _DPI = 300
-_DEFAULT_LANGUAGE = "por"
+# Used when the voice language has no recognition data of its own.
+_DEFAULT_LANGUAGE = {"pt_BR": "por", "es": "spa"}.get(language(), "eng")
 _LANGUAGES = {"pt": "por", "en": "eng", "es": "spa", "fr": "fra", "de": "deu", "it": "ita"}
 
 ProgressCallback = Callable[[int, int], None]

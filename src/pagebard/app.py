@@ -13,19 +13,33 @@ from PySide6.QtCore import (
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication
 
-from pagebard.ui.main_window import MainWindow
-from pagebard.ui.messages import APP_NAME
+from pagebard import APP_ID, APP_NAME
+from pagebard.core import i18n
 
-APP_ID = "io.github.gabrielrochafc.Pagebard"
+# Nothing with translated text is imported up here: the language must be
+# chosen first (see main), because many texts are built when modules load.
+
+_QT_CATALOGS = {"pt_BR": "qtbase_pt_BR", "es": "qtbase_es"}
 
 
 def install_translations(app: QCoreApplication) -> bool:
-    """Put Qt's own texts (dialog buttons, file chooser) in Portuguese."""
+    """Put Qt's own texts (dialog buttons, file chooser) in the program's language."""
+    catalog = _QT_CATALOGS.get(i18n.language())
+    if catalog is None:
+        return True  # English is what Qt speaks without help
     translator = QTranslator(app)
     folder = QLibraryInfo.path(QLibraryInfo.LibraryPath.TranslationsPath)
-    if not translator.load("qtbase_pt_BR", folder):
+    if not translator.load(catalog, folder):
         return False
     return app.installTranslator(translator)
+
+
+def choose_language(settings: QSettings) -> str:
+    """Use the language saved in the preferences; otherwise the system's."""
+    saved = settings.value("language")
+    if isinstance(saved, str) and saved in i18n.available_languages():
+        return i18n.set_language(saved)
+    return i18n.set_language(None)
 
 
 def quiet_qt_logging() -> None:
@@ -60,6 +74,10 @@ def file_argument(argv: list[str]) -> str | None:
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv if argv is None else argv
     quiet_qt_logging()
+    settings = QSettings(APP_NAME, APP_NAME)
+    choose_language(settings)
+    from pagebard.ui.main_window import MainWindow  # after the language is known
+
     app = QApplication(argv)
     app.setStyle("Fusion")  # same look on every desktop; follows light/dark
     app.setApplicationName(APP_NAME)
@@ -67,7 +85,7 @@ def main(argv: list[str] | None = None) -> int:
     app.setDesktopFileName(APP_ID)
     app.setWindowIcon(QIcon.fromTheme(APP_ID))  # there once the app is installed
     install_translations(app)
-    window = MainWindow(settings=QSettings(APP_NAME, APP_NAME))
+    window = MainWindow(settings=settings)
     window.show()
     path = file_argument(app.arguments())  # Qt has removed its own options
     if path is not None:

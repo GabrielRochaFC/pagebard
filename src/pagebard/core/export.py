@@ -7,15 +7,17 @@ import threading
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
+from pagebard.core.i18n import _
 from pagebard.core.errors import PagebardError
 
 MSG_NO_FFMPEG = (
-    "Para exportar em MP3 é preciso o programa ffmpeg, que não foi encontrado "
-    "neste computador."
+    _("Exporting to MP3 needs the ffmpeg program, which was not found on this computer.")
 )
 MSG_EXPORT = (
-    "Não foi possível gravar o arquivo MP3. Verifique se há espaço em disco e "
-    "se a pasta permite gravação."
+    _(
+        "The MP3 file could not be saved. Check that there is free disk space and "
+        "that the folder allows writing."
+    )
 )
 
 

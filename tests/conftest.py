@@ -2,6 +2,8 @@ import os
 
 # Must be set before any Qt module is imported.
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+# The tests check the Portuguese texts; other languages have tests of their own.
+os.environ["PAGEBARD_LANGUAGE"] = "pt_BR"
 
 import pymupdf
 import pytest

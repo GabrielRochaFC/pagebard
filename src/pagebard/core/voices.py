@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from pagebard.core.i18n import _, language, N_
 from pagebard.core.download import (
     DownloadCancelled,  # noqa: F401  (raised by download_voice; callers import it here)
     ProgressCallback,
@@ -22,30 +23,33 @@ from pagebard.core.download import (
 from pagebard.core.errors import PagebardError
 
 HF_BASE = "https://huggingface.co/rhasspy/piper-voices/resolve/main"
-DEFAULT_VOICE_KEY = "pt_BR-faber-medium"
+# The voice offered on first use follows the language of the interface.
+_DEFAULT_VOICES = {"pt_BR": "pt_BR-faber-medium", "es": "es_ES-davefx-medium"}
+DEFAULT_VOICE_KEY = _DEFAULT_VOICES.get(language(), "en_US-lessac-medium")
+# The language of that voice, e.g. "pt_BR": it comes first in lists of voices.
+PREFERRED_LANGUAGE = DEFAULT_VOICE_KEY.split("-")[0]
 MSG_DOWNLOAD = (
-    "Não foi possível baixar a voz. Verifique sua conexão com a internet e "
-    "tente novamente."
+    _("The voice could not be downloaded. Check your internet connection and try again.")
 )
 
 CATALOG_URL = HF_BASE + "/voices.json"
 MSG_CATALOG = (
-    "Não foi possível obter a lista de vozes. Verifique sua conexão com a internet."
+    _("The list of voices could not be fetched. Check your internet connection.")
 )
 
 _LANGUAGES = {
-    "pt_BR": "Português (Brasil)",
-    "pt_PT": "Português (Portugal)",
-    "en_US": "Inglês (EUA)",
-    "en_GB": "Inglês (Reino Unido)",
-    "es_ES": "Espanhol (Espanha)",
-    "es_MX": "Espanhol (México)",
-    "es_AR": "Espanhol (Argentina)",
-    "fr_FR": "Francês",
-    "de_DE": "Alemão",
-    "it_IT": "Italiano",
+    "pt_BR": N_("Portuguese (Brazil)"),
+    "pt_PT": N_("Portuguese (Portugal)"),
+    "en_US": N_("English (US)"),
+    "en_GB": N_("English (UK)"),
+    "es_ES": N_("Spanish (Spain)"),
+    "es_MX": N_("Spanish (Mexico)"),
+    "es_AR": N_("Spanish (Argentina)"),
+    "fr_FR": N_("French"),
+    "de_DE": N_("German"),
+    "it_IT": N_("Italian"),
 }
-_QUALITIES = {"x_low": "muito baixa", "low": "baixa", "medium": "média", "high": "alta"}
+_QUALITIES = {"x_low": N_("very low"), "low": N_("low"), "medium": N_("medium"), "high": N_("high")}
 _QUALITY_ORDER = ["x_low", "low", "medium", "high"]
 
 _KEY = re.compile(r"^([a-z]{2,3}_[A-Z]{2})-([^-]+)-([a-z_]+)$")
@@ -65,12 +69,14 @@ def parse_key(key: str) -> tuple[str, str, str]:
 
 
 def language_label(code: str) -> str:
-    """The language in Portuguese, e.g. "Português (Brasil)"; the code if unknown."""
-    return _LANGUAGES.get(code, code)
+    """Name of a voice language for the user, e.g. "Portuguese (Brazil)"; the code if unknown."""
+    name = _LANGUAGES.get(code)
+    return _(name) if name else code
 
 
 def quality_label(quality: str) -> str:
-    return _QUALITIES.get(quality, quality)
+    name = _QUALITIES.get(quality)
+    return _(name) if name else quality
 
 
 def _label(key: str) -> str:
@@ -167,7 +173,7 @@ def parse_catalog(data: Any) -> list[CatalogVoice]:
 def _catalog_order(voice: CatalogVoice) -> tuple:
     rank = _QUALITY_ORDER.index(voice.quality) if voice.quality in _QUALITY_ORDER else 99
     return (
-        voice.language != "pt_BR",
+        voice.language != PREFERRED_LANGUAGE,
         language_label(voice.language).casefold(),
         voice.name,
         rank,

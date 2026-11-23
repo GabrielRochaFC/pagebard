@@ -1,0 +1,476 @@
+# Brazilian Portuguese translation of Pagebard.
+# The texts of the program are written in English in the source code;
+# this file gives each of them in Brazilian Portuguese.
+msgid ""
+msgstr ""
+"Project-Id-Version: Pagebard\n"
+"Language: pt_BR\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+msgid "&File"
+msgstr "&Arquivo"
+
+msgid "&Help"
+msgstr "A&juda"
+
+msgid "&Reading"
+msgstr "&Leitura"
+
+msgid "&View"
+msgstr "&Exibir"
+
+msgid "+ or ="
+msgstr "+ ou ="
+
+msgid "<b>Pagebard {version}</b><br>Reads PDFs aloud, without internet.<br><br>Free software, licensed AGPL-3.0-or-later.<br>Uses Piper voices, PyMuPDF (MuPDF and Tesseract) and Qt."
+msgstr "<b>Pagebard {version}</b><br>Lê PDFs em voz alta, sem internet.<br><br>Software livre, licença AGPL-3.0-or-later.<br>Usa as vozes do Piper, o PyMuPDF (MuPDF e Tesseract) e o Qt."
+
+msgid "About Pagebard"
+msgstr "Sobre o Pagebard"
+
+msgid "All languages"
+msgstr "Todos os idiomas"
+
+msgid "Automatic (system)"
+msgstr "Automático (sistema)"
+
+msgid "Available"
+msgstr "Disponível"
+
+msgid "Cancel"
+msgstr "Cancelar"
+
+msgid "Click a word"
+msgstr "Clique numa palavra"
+
+msgid "click the text to choose where to start; drag to read only a passage"
+msgstr "clique no texto para escolher onde começar; arraste para ler só um trecho"
+
+msgid "Close"
+msgstr "Fechar"
+
+msgid "Copy"
+msgstr "Copiar"
+
+msgid "Copy the selected passage"
+msgstr "Copiar o trecho selecionado"
+
+msgid "Ctrl + mouse wheel"
+msgstr "Ctrl + roda do mouse"
+
+msgid "Document pages"
+msgstr "Páginas do documento"
+
+msgid "Double-click a word"
+msgstr "Duplo clique numa palavra"
+
+msgid "Download"
+msgstr "Baixar"
+
+msgid "Download or remove voices"
+msgstr "Baixar ou remover vozes"
+
+msgid "Downloading recognition data…"
+msgstr "Baixando dados de reconhecimento…"
+
+msgid "Downloading voice…"
+msgstr "Baixando voz…"
+
+msgid "Downloading voice… {done} of {total} MB"
+msgstr "Baixando voz… {done} de {total} MB"
+
+msgid "Drag over the text"
+msgstr "Arrastar sobre o texto"
+
+msgid "English (UK)"
+msgstr "Inglês (Reino Unido)"
+
+msgid "English (US)"
+msgstr "Inglês (EUA)"
+
+msgid "Export cancelled."
+msgstr "Exportação cancelada."
+
+msgid "Export MP3…"
+msgstr "Exportar MP3…"
+
+msgid "Export the reading to MP3"
+msgstr "Exportar a leitura para MP3"
+
+msgid "Export to MP3"
+msgstr "Exportar para MP3"
+
+msgid "Exporting to MP3 needs the ffmpeg program, which was not found on this computer."
+msgstr "Para exportar em MP3 é preciso o programa ffmpeg, que não foi encontrado neste computador."
+
+msgid "Exporting to MP3…"
+msgstr "Exportando para MP3…"
+
+msgid "Exporting to MP3… sentence {done} of {total}"
+msgstr "Exportando para MP3… frase {done} de {total}"
+
+msgid "Faster"
+msgstr "Mais rápido"
+
+msgid "First page to read"
+msgstr "Primeira página a ler"
+
+msgid "Fit the page to the window width"
+msgstr "Ajustar a página à largura da janela"
+
+msgid "Fit the page to the window width (Ctrl+0)"
+msgstr "Ajustar a página à largura da janela (Ctrl+0)"
+
+msgid "Fit width"
+msgstr "Ajustar à largura"
+
+msgid "French"
+msgstr "Francês"
+
+msgid "German"
+msgstr "Alemão"
+
+msgid "Go to the start or the end of the document"
+msgstr "Ir ao começo ou ao fim do documento"
+
+msgid "high"
+msgstr "alta"
+
+msgid "Installed"
+msgstr "Instalada"
+
+msgid "Interface text size"
+msgstr "Texto da interface"
+
+msgid "Italian"
+msgstr "Italiano"
+
+msgid "Key or gesture"
+msgstr "Tecla ou gesto"
+
+msgid "Keyboard shortcuts"
+msgstr "Atalhos de teclado"
+
+msgid "Keyboard shortcuts — {app}"
+msgstr "Atalhos de teclado — {app}"
+
+msgid "Language"
+msgstr "Idioma"
+
+msgid "Language:"
+msgstr "Idioma:"
+
+msgid "Large"
+msgstr "Grande"
+
+msgid "Last page to read"
+msgstr "Última página a ler"
+
+msgid "Loading the list of voices…"
+msgstr "Carregando lista de vozes…"
+
+msgid "low"
+msgstr "baixa"
+
+msgid "medium"
+msgstr "média"
+
+msgid "Menu with Read from here, Read selection and Copy"
+msgstr "Menu com Ler a partir daqui, Ler seleção e Copiar"
+
+msgid "MP3 audio (*.mp3)"
+msgstr "Áudio MP3 (*.mp3)"
+
+msgid "MP3 saved to {path}"
+msgstr "MP3 gravado em {path}"
+
+msgid "No audio output was found. Connect speakers or headphones and try again."
+msgstr "Nenhuma saída de áudio foi encontrada. Conecte alto-falantes ou fones de ouvido e tente novamente."
+
+msgid "Normal"
+msgstr "Normal"
+
+msgid "Open a PDF"
+msgstr "Abrir um PDF"
+
+msgid "Open a PDF (Ctrl+O) or drag the file here"
+msgstr "Abra um PDF (Ctrl+O) ou arraste o arquivo para cá"
+
+msgid "Open a PDF file (Ctrl+O)"
+msgstr "Abrir um arquivo PDF (Ctrl+O)"
+
+msgid "Open PDF"
+msgstr "Abrir PDF"
+
+msgid "Open PDF…"
+msgstr "Abrir PDF…"
+
+msgid "Opening PDF…"
+msgstr "Abrindo PDF…"
+
+msgid "Page {page} of {count}"
+msgstr "Página {page} de {count}"
+
+msgid "Pages:"
+msgstr "Páginas:"
+
+msgid "Paused"
+msgstr "Pausado"
+
+msgid "PDF documents (*.pdf);;All files (*)"
+msgstr "Documentos PDF (*.pdf);;Todos os arquivos (*)"
+
+msgid "Play / Pause"
+msgstr "Reproduzir / Pausar"
+
+msgid "Play, pause or resume reading"
+msgstr "Reproduzir, pausar ou continuar a leitura"
+
+msgid "Portuguese (Brazil)"
+msgstr "Português (Brasil)"
+
+msgid "Portuguese (Portugal)"
+msgstr "Português (Portugal)"
+
+msgid "Preparing the voice…"
+msgstr "Preparando a voz…"
+
+msgid "Quality"
+msgstr "Qualidade"
+
+msgid "Quit"
+msgstr "Sair"
+
+msgid "Read aloud or pause (Space)"
+msgstr "Ler em voz alta ou pausar (Espaço)"
+
+msgid "Read faster"
+msgstr "Leitura mais rápida"
+
+msgid "Read from here"
+msgstr "Ler a partir daqui"
+
+msgid "Read from there right away"
+msgstr "Ler a partir dali imediatamente"
+
+msgid "Read selection"
+msgstr "Ler seleção"
+
+msgid "Read slower"
+msgstr "Leitura mais devagar"
+
+msgid "Reading finished."
+msgstr "Leitura concluída."
+
+msgid "Reading speed (+ and - keys)"
+msgstr "Velocidade da leitura (teclas + e -)"
+
+msgid "Reading — page {page} of {count}"
+msgstr "Lendo — página {page} de {count}"
+
+msgid "Reading…"
+msgstr "Lendo…"
+
+msgid "Recognition found no text in this PDF."
+msgstr "O reconhecimento não encontrou texto neste PDF."
+
+msgid "Recognize text (OCR)…"
+msgstr "Reconhecer texto (OCR)…"
+
+msgid "Recognizing text…"
+msgstr "Reconhecendo texto…"
+
+msgid "Recognizing text… page {done} of {total}"
+msgstr "Reconhecendo texto… página {done} de {total}"
+
+msgid "Remove"
+msgstr "Remover"
+
+msgid "Remove the voice {voice}?"
+msgstr "Remover a voz {voice}?"
+
+msgid "Restart Pagebard to use the new language."
+msgstr "Reinicie o Pagebard para usar o novo idioma."
+
+msgid "Right click"
+msgstr "Botão direito"
+
+msgid "Save the reading of the chosen pages as an MP3 file"
+msgstr "Gravar a leitura das páginas escolhidas num arquivo MP3"
+
+msgid "Scroll one screen up or down"
+msgstr "Rolar uma tela para cima ou para baixo"
+
+msgid "Select a passage to read only that"
+msgstr "Selecionar um trecho para ler só ele"
+
+msgid "Show this list"
+msgstr "Mostrar esta lista"
+
+msgid "Size"
+msgstr "Tamanho"
+
+msgid "Slower"
+msgstr "Mais devagar"
+
+msgid "Something unexpected went wrong. Technical detail: {detail}"
+msgstr "Ocorreu um erro inesperado. Detalhe técnico: {detail}"
+
+msgid "Space"
+msgstr "Espaço"
+
+msgid "Spanish (Argentina)"
+msgstr "Espanhol (Argentina)"
+
+msgid "Spanish (Mexico)"
+msgstr "Espanhol (México)"
+
+msgid "Spanish (Spain)"
+msgstr "Espanhol (Espanha)"
+
+msgid "Speed"
+msgstr "Velocidade"
+
+msgid "Speed:"
+msgstr "Velocidade:"
+
+msgid "Start reading from that point"
+msgstr "Começar a leitura daquele ponto"
+
+msgid "Status"
+msgstr "Situação"
+
+msgid "Stop"
+msgstr "Parar"
+
+msgid "Stop reading (Esc)"
+msgstr "Parar a leitura (Esc)"
+
+msgid "Stop reading; when stopped, clears the selection and the starting point"
+msgstr "Parar a leitura; parado, limpa a seleção e o ponto de início"
+
+msgid "The file could not be opened. Check that it still exists and that you are allowed to read it."
+msgstr "Não foi possível abrir o arquivo. Verifique se ele ainda existe e se você tem permissão para lê-lo."
+
+msgid "The file {name} already exists. Replace it?"
+msgstr "O arquivo {name} já existe. Substituir?"
+
+msgid "The list of voices could not be fetched. Check your internet connection."
+msgstr "Não foi possível obter a lista de vozes. Verifique sua conexão com a internet."
+
+msgid "The MP3 file could not be saved. Check that there is free disk space and that the folder allows writing."
+msgstr "Não foi possível gravar o arquivo MP3. Verifique se há espaço em disco e se a pasta permite gravação."
+
+msgid "The text of this PDF could not be recognized."
+msgstr "Não foi possível reconhecer o texto deste PDF."
+
+msgid "The text recognition data could not be downloaded. Check your internet connection and try again."
+msgstr "Não foi possível baixar os dados de reconhecimento de texto. Verifique sua conexão com a internet e tente novamente."
+
+msgid "The voice could not be downloaded. Check your internet connection and try again."
+msgstr "Não foi possível baixar a voz. Verifique sua conexão com a internet e tente novamente."
+
+msgid "There is no text to read on the chosen pages."
+msgstr "Não há texto para ler nas páginas escolhidas."
+
+msgid "This file is not a valid PDF, or it is damaged."
+msgstr "Este arquivo não é um PDF válido ou está danificado."
+
+msgid "This PDF has no text (it looks scanned). Recognize the text now? It may take a few minutes."
+msgstr "Este PDF não tem texto (parece escaneado). Reconhecer o texto agora? Pode levar alguns minutos."
+
+msgid "This PDF has no text to read."
+msgstr "Este PDF não tem texto para ler."
+
+msgid "This PDF is password-protected. Opening PDFs with a password is not supported yet."
+msgstr "Este PDF é protegido por senha. Ainda não é possível abrir PDFs com senha."
+
+msgid "This voice could not produce speech. Try downloading the voice again."
+msgstr "Não foi possível gerar a fala com esta voz. Tente baixar a voz novamente."
+
+msgid "To read aloud, a voice has to be downloaded (about 60 MB, only the first time). Download it now?"
+msgstr "Para ler em voz alta é preciso baixar uma voz (63 MB, só na primeira vez). Baixar agora?"
+
+msgid "Very large"
+msgstr "Muito grande"
+
+msgid "very low"
+msgstr "muito baixa"
+
+msgid "Voice"
+msgstr "Voz"
+
+msgid "Voice used for reading"
+msgstr "Voz usada na leitura"
+
+msgid "Voice:"
+msgstr "Voz:"
+
+msgid "Voices"
+msgstr "Vozes"
+
+msgid "Voices — {app}"
+msgstr "Vozes — {app}"
+
+msgid "Voices…"
+msgstr "Vozes…"
+
+msgid "What it does"
+msgstr "O que faz"
+
+msgid "Zoom in"
+msgstr "Aumentar a página"
+
+msgid "Zoom in (Ctrl++)"
+msgstr "Aumentar a página (Ctrl++)"
+
+msgid "Zoom in page"
+msgstr "Aumentar página"
+
+msgid "Zoom out"
+msgstr "Diminuir a página"
+
+msgid "Zoom out (Ctrl+-)"
+msgstr "Diminuir a página (Ctrl+-)"
+
+msgid "Zoom out page"
+msgstr "Diminuir página"
+
+msgid "Zoom the page in or out"
+msgstr "Aumentar ou diminuir a página"
+
+msgid "⏸ Pause"
+msgstr "⏸ Pausar"
+
+msgid "⏹ Stop"
+msgstr "⏹ Parar"
+
+msgid "▶ Play"
+msgstr "▶ Reproduzir"
+
+msgid "▶ Read from here"
+msgstr "▶ Ler daqui"
+
+msgid "▶ Read selection"
+msgstr "▶ Ler seleção"
+
+msgid "▶ Resume"
+msgstr "▶ Continuar"
+
+msgid "{name} — {count} page"
+msgid_plural "{name} — {count} pages"
+msgstr[0] "{name} — {count} página"
+msgstr[1] "{name} — {count} páginas"
+
+msgid "{count} page without text: use File → Recognize text (OCR)"
+msgid_plural "{count} pages without text: use File → Recognize text (OCR)"
+msgstr[0] "{count} página sem texto: use Arquivo → Reconhecer texto (OCR)"
+msgstr[1] "{count} páginas sem texto: use Arquivo → Reconhecer texto (OCR)"
+
+msgid "Text recognized on {count} page."
+msgid_plural "Text recognized on {count} pages."
+msgstr[0] "Texto reconhecido em {count} página."
+msgstr[1] "Texto reconhecido em {count} páginas."
